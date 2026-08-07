@@ -10,7 +10,7 @@
 <script type="module">
   // เชื่อมต่อ Firebase (Firestore) เพื่อให้ครูหลายคนกรอกคะแนนในห้องเดียวกันแบบเรียลไทม์
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-  import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBfrjQqwi3LGT48njbwux7tJYx86_yfiHA",
@@ -38,6 +38,14 @@
   };
   window.__fbSave = function(roomId, data){
     return setDoc(doc(db, 'rooms', roomId), data);
+  };
+  // รูปตราแรงค์เก็บแยกเอกสารละใบใน subcollection 'images' — แต่ละใบจึงมีโควตา 1MB ของตัวเอง
+  window.__fbSaveImage = function(roomId, imageId, dataUrl){
+    return setDoc(doc(db, 'rooms', roomId, 'images', imageId), { data: dataUrl });
+  };
+  window.__fbLoadImage = async function(roomId, imageId){
+    const snap = await getDoc(doc(db, 'rooms', roomId, 'images', imageId));
+    return snap.exists() ? snap.data().data : null;
   };
   window.__fbReady = true;
   window.dispatchEvent(new Event('fbready'));
@@ -440,12 +448,9 @@ function hashPin(pin){
   for(let i=0;i<s.length;i++){ h = ((h*33) ^ s.charCodeAt(i)) >>> 0; }
   return 'room_' + h.toString(36);
 }
-/* บีบอัดรูปตราแบบ base64 ที่ใหญ่เกินไปให้เล็กลง (ย่อขนาด+แปลงเป็น JPEG คุณภาพปานกลาง)
-   ก่อนบันทึกทุกครั้ง กัน Firestore ปฏิเสธเพราะเอกสารเกิน 1MB — และรูปเดียวกันที่ซ้ำกันหลายช่วงชั้น
-   จะถูกบีบอัดแค่ครั้งเดียวแล้วใช้ผลลัพธ์ร่วมกัน (ไม่ต้องบีบซ้ำ) */
-/* ย่อรูป — ค่าเริ่มต้นเก็บเป็น PNG เพื่อ "รักษาพื้นหลังโปร่งใส" ให้ตราลอยกลืนไปกับใบประกาศ
-   ตัวเลือก jpeg:true ใช้เฉพาะตอนจำเป็นต้องบีบให้เล็กลงจริงๆ (JPEG ไม่รองรับความโปร่งใส จึงต้องเติมพื้นขาวกันเป็นสีดำ) */
-function resizeDataUrl(dataUrl, maxDim, {jpeg=false, quality=0.85}={}){
+/* ย่อรูป — เก็บเป็น PNG เพื่อ "รักษาพื้นหลังโปร่งใส" ให้ตราลอยกลืนไปกับใบประกาศ
+   ตัวเลือก jpeg:true ใช้เฉพาะกรณีรูปใหญ่มากจนต้องบีบจริงๆ (JPEG ไม่รองรับความโปร่งใส จึงต้องเติมพื้นขาวกันเป็นสีดำ) */
+function resizeDataUrl(dataUrl, maxDim, {jpeg=false, quality=0.92}={}){
   return new Promise(resolve=>{
     const img = new Image();
     img.onload = () => {
@@ -454,6 +459,8 @@ function resizeDataUrl(dataUrl, maxDim, {jpeg=false, quality=0.85}={}){
       cv.width = Math.max(1, Math.round(img.width*sc));
       cv.height = Math.max(1, Math.round(img.height*sc));
       const ctx = cv.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       if(jpeg){ ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height); }
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
       resolve(jpeg ? cv.toDataURL('image/jpeg', quality) : cv.toDataURL('image/png'));
@@ -462,41 +469,83 @@ function resizeDataUrl(dataUrl, maxDim, {jpeg=false, quality=0.85}={}){
     img.src = dataUrl;
   });
 }
-/* เพดานเอกสารของ Firestore คือ 1,048,576 bytes — กันขอบไว้ให้ข้อมูลนักเรียนโตได้อีก */
-const SAVE_BUDGET = 820000;
-const docSize = () => JSON.stringify(state).length;
-async function compactTierImages(){
-  // ถ้ายังไม่ใกล้เต็ม ไม่แตะรูปเลย — กันรูปเบลอจากการบีบซ้ำโดยไม่จำเป็น
-  if(docSize() <= SAVE_BUDGET) return;
-  // ใกล้เต็มแล้วค่อยไล่ลดทีละขั้น: ลดขนาดก่อน (ยังคงความโปร่งใส) แล้วค่อยยอมแลกเป็น JPEG เป็นทางเลือกสุดท้าย
-  const steps = [
-    {maxDim:224, jpeg:false},
-    {maxDim:176, jpeg:false},
-    {maxDim:224, jpeg:true, quality:0.88},
-    {maxDim:176, jpeg:true, quality:0.8},
-    {maxDim:128, jpeg:true, quality:0.7},
-  ];
-  for(const step of steps){
-    const seen = new Map();   // รูปเดียวกันที่ซ้ำหลายช่วงชั้น บีบครั้งเดียวแล้วใช้ผลร่วมกัน
-    for(const band of GRADE_BANDS){
-      for(const t of (state.tierGroups[band] || [])){
-        if(t.img && typeof t.img === 'string' && t.img.startsWith('data:image')){
-          if(!seen.has(t.img)) seen.set(t.img, await resizeDataUrl(t.img, step.maxDim, step));
-          t.img = seen.get(t.img);
-        }
-      }
-    }
-    if(docSize() <= SAVE_BUDGET) return;
+
+/* ---------- คลังรูปตราแรงค์ (เก็บแยกเอกสารละใบ) ----------
+   เอกสาร Firestore จำกัด 1,048,576 bytes ต่อใบ ถ้าเก็บรูปทุกใบรวมในเอกสารห้องเดียวกัน
+   รูปทั้งหมดต้องแชร์เพดานก้อนเดียวจนต้องบีบจนเบลอ — จึงย้ายไปเก็บที่ /rooms/{id}/images/{imgId}
+   เอกสารละใบ ทำให้แต่ละรูปมีโควตา 1MB ของตัวเอง เก็บความละเอียดสูงได้เต็มที่
+   ในเอกสารห้องเก็บแค่ imgId (ข้อความสั้นๆ) เท่านั้น */
+const IMG_BUDGET = 900000;              // เผื่อขอบจากเพดาน 1MB ของเอกสารรูป
+const UPLOAD_MAX_DIM = 1024;            // ความละเอียดสูงสุดที่เก็บ (คมพอสำหรับพิมพ์ระดับ 600dpi)
+let tierImageCache = {};                // {imgId: dataUrl} — โหลดครั้งเดียวแล้วใช้ซ้ำ
+
+function resolveTierImg(tier){
+  if(!tier) return null;
+  if(tier.img) return tier.img;                       // รูปที่เพิ่งอัพโหลด (ยังไม่ถูกย้ายออก) หรือข้อมูลรุ่นเก่า
+  if(tier.imgId) return tierImageCache[tier.imgId] || null;
+  return null;
+}
+/* ย่อรูปให้พอดีโควตาเอกสารรูป โดยไล่ลดจากความละเอียดสูงสุดลงมาเท่าที่จำเป็น */
+async function fitImageToBudget(dataUrl){
+  let out = await resizeDataUrl(dataUrl, UPLOAD_MAX_DIM);
+  if(out.length <= IMG_BUDGET) return out;
+  for(const dim of [896, 768, 640, 512, 384]){
+    out = await resizeDataUrl(dataUrl, dim);
+    if(out.length <= IMG_BUDGET) return out;
   }
+  // รูปที่รายละเอียดหนาแน่นมากจริงๆ ค่อยยอมแลกความโปร่งใสเพื่อให้บันทึกได้
+  for(const dim of [768, 512]){
+    out = await resizeDataUrl(dataUrl, dim, {jpeg:true, quality:0.9});
+    if(out.length <= IMG_BUDGET) return out;
+  }
+  return await resizeDataUrl(dataUrl, 384, {jpeg:true, quality:0.8});
+}
+/* ย้ายรูปที่ยังฝังอยู่ในเอกสารห้อง (tier.img) ออกไปเก็บเป็นเอกสารรูปของตัวเอง แล้วเหลือไว้แค่ imgId
+   รูปเดียวกันที่ใช้ซ้ำหลายช่วงชั้นจะอัพโหลดครั้งเดียวแล้วอ้าง imgId เดียวกัน */
+async function externalizeTierImages(){
+  const uploaded = new Map();
+  for(const band of GRADE_BANDS){
+    for(const t of (state.tierGroups[band] || [])){
+      if(!t.img || typeof t.img !== 'string' || !t.img.startsWith('data:image')) continue;
+      const src = t.img;
+      if(!uploaded.has(src)){
+        const fitted = await fitImageToBudget(src);
+        const imgId = 'img_' + uid();
+        await window.__fbSaveImage(currentRoomId, imgId, fitted);
+        tierImageCache[imgId] = fitted;
+        uploaded.set(src, imgId);
+      }
+      t.imgId = uploaded.get(src);
+      t.img = null;                      // เอกสารห้องเหลือแค่ตัวอ้างอิง จึงเล็กเสมอ
+    }
+  }
+  return uploaded.size > 0;
 }
 async function save(){
   if(!currentRoomId) return;
   try{
-    await compactTierImages();
+    const movedImages = await externalizeTierImages();
     await window.__fbSave(currentRoomId, state);
+    // ซิงค์แถวในแท็บตั้งค่าแรงค์ให้ถือ imgId ตัวใหม่ ไม่งั้นการบันทึกครั้งถัดไปจะอัพโหลดรูปเดิมซ้ำ
+    if(movedImages && document.getElementById('page-tiers').style.display !== 'none') renderTiers();
   }catch(err){
     alert('บันทึกไม่สำเร็จ: ' + (err && err.message ? err.message : 'เชื่อมต่อห้องไม่ได้ ลองใหม่อีกครั้ง'));
   }
+}
+/* โหลดรูปที่ยังไม่มีในแคชจากเอกสารรูป แล้วเรนเดอร์ใหม่เมื่อได้ครบ */
+async function loadMissingTierImages(){
+  const ids = new Set();
+  for(const band of GRADE_BANDS){
+    for(const t of (state.tierGroups[band] || [])){
+      if(t.imgId && !(t.imgId in tierImageCache)) ids.add(t.imgId);
+    }
+  }
+  if(!ids.size) return false;
+  await Promise.all([...ids].map(async id=>{
+    try{ tierImageCache[id] = await window.__fbLoadImage(currentRoomId, id); }
+    catch(e){ tierImageCache[id] = null; }
+  }));
+  return true;
 }
 function onRoomData(data, err){
   if(err){
@@ -511,7 +560,8 @@ function onRoomData(data, err){
     delete merged.tiers;
     state = merged;
   }
-  if(!firstSyncDone){
+  const wasFirst = !firstSyncDone;
+  if(wasFirst){
     firstSyncDone = true;
     document.getElementById('pinGate').style.display = 'none';
     stuRoomFilter=''; printRoomFilter=''; printSelected = new Set(); currentTierBand = GRADE_BANDS[0];
@@ -523,6 +573,13 @@ function onRoomData(data, err){
     if(document.getElementById('page-dashboard').style.display !== 'none') renderDashboard();
     if(document.getElementById('page-print').style.display !== 'none') renderPrintTab();
   }
+  // รูปตราเก็บแยกเอกสาร จึงต้องตามโหลดเพิ่ม แล้วค่อยเรนเดอร์ซ้ำเมื่อได้ครบ
+  loadMissingTierImages().then(loaded=>{
+    if(!loaded) return;
+    renderStudents();
+    if(document.getElementById('page-tiers').style.display !== 'none') renderTiers();
+    if(document.getElementById('page-print').style.display !== 'none') renderPrintTab();
+  });
 }
 function connectToRoom(pin){
   currentPin = pin;
@@ -652,8 +709,9 @@ const ANIMALS = [
 const DEFAULT_ANIMALS = ['wolf','bear','tiger','eagle','lion','dragon'];
 let emblemSeq = 0;
 function emblemSVG(tier, idx, count, size, banner){
-  if(tier.img){
-    return `<img src="${tier.img}" width="${(size*1.09).toFixed(0)}" style="height:auto; display:block;" alt="">`;
+  const customImg = resolveTierImg(tier);
+  if(customImg){
+    return `<img src="${customImg}" width="${(size*1.09).toFixed(0)}" style="height:auto; display:block;" alt="">`;
   }
   const c = tier.color;
   const cl = shade(c,55), cm = shade(c,10), cd = shade(c,-35), cd2 = shade(c,-62), bgd = shade(c,-78);
@@ -881,7 +939,8 @@ function renderTiers(){
     `<button class="${g===currentTierBand?'active':''}" onclick="switchTierBand('${g}')">${esc(GRADE_BAND_LABELS[g])}</button>`
   ).join('');
   const ts = sortedTiers(currentTierBand);
-  renderTiers.imgs = ts.map(t=>t.img||null);
+  // เก็บทั้งรูปที่ยังไม่ถูกย้ายออก (img) และตัวอ้างอิงรูปที่เก็บแยกเอกสารแล้ว (imgId) ไว้ตามแถว
+  renderTiers.imgRefs = ts.map(t=>({img: t.img||null, imgId: t.imgId||null}));
   document.getElementById('tierRows').innerHTML = ts.map((t,i)=>{
     const cur = (ANIMALS.some(a=>a.id===t.animal) && t.animal) || DEFAULT_ANIMALS[Math.min(i, DEFAULT_ANIMALS.length-1)];
     return `
@@ -895,7 +954,7 @@ function renderTiers(){
       <span class="sub">คะแนนขั้นต่ำ</span>
       <input type="number" value="${t.min}" data-f="min" style="width:90px;">
       <button class="small ghost" onclick="uploadTierImg(${i})">📷 ใช้รูปเอง</button>
-      ${t.img ? `<button class="small danger" onclick="clearTierImg(${i})">✕ รูป</button>` : ''}
+      ${resolveTierImg(t) ? `<button class="small danger" onclick="clearTierImg(${i})">✕ รูป</button>` : ''}
       <button class="small danger" onclick="removeTier(${i})">ลบ</button>
     </div>`;
   }).join('');
@@ -908,20 +967,26 @@ function refreshTierEmblems(){
   rows.forEach((row,i)=>{
     const color = row.querySelector('[data-f=color]').value;
     const animal = row.querySelector('[data-f=animal]').value;
-    const img = (renderTiers.imgs||[])[i] || null;
-    row.querySelector('.tier-emblem').innerHTML = emblemSVG({color, animal, img}, i, rows.length, 38);
+    const ref = (renderTiers.imgRefs||[])[i] || {};
+    row.querySelector('.tier-emblem').innerHTML =
+      emblemSVG({color, animal, img: ref.img||null, imgId: ref.imgId||null}, i, rows.length, 38);
   });
 }
 function readTierRows(){
-  return [...document.querySelectorAll('.tier-row')].map((row,i)=>({
-    color:  row.querySelector('[data-f=color]').value,
-    animal: row.querySelector('[data-f=animal]').value,
-    name:   row.querySelector('[data-f=name]').value.trim() || 'แรงค์',
-    min:    Number(row.querySelector('[data-f=min]').value) || 0,
-    img:    (renderTiers.imgs||[])[i] || null,
-  }));
+  return [...document.querySelectorAll('.tier-row')].map((row,i)=>{
+    const ref = (renderTiers.imgRefs||[])[i] || {};
+    return {
+      color:  row.querySelector('[data-f=color]').value,
+      animal: row.querySelector('[data-f=animal]').value,
+      name:   row.querySelector('[data-f=name]').value.trim() || 'แรงค์',
+      min:    Number(row.querySelector('[data-f=min]').value) || 0,
+      img:    ref.img || null,
+      imgId:  ref.imgId || null,
+    };
+  });
 }
-/* รูปตราที่ครูอัพโหลดเอง — ย่อเหลือ 384px เก็บเป็น data URL ในไฟล์ข้อมูล */
+/* รูปตราที่ครูอัพโหลดเอง — เก็บความละเอียดสูงสุดถึง 1024px เป็น PNG (คงพื้นหลังโปร่งใส)
+   แล้วย้ายไปเก็บเป็นเอกสารรูปของตัวเองตอนบันทึก จึงไม่ไปเบียดโควตาของเอกสารห้อง */
 let tierImgTarget = null;
 function uploadTierImg(i){
   tierImgTarget = i;
@@ -931,20 +996,20 @@ function tierImgChosen(ev){
   const f = ev.target.files[0];
   ev.target.value = '';
   if(!f || tierImgTarget===null) return;
+  const objUrl = URL.createObjectURL(f);
   const img = new Image();
   img.onload = async () => {
-    // เก็บเป็น PNG 320px — คมพอสำหรับพิมพ์ และรักษาพื้นหลังโปร่งใสให้ตรากลืนไปกับใบประกาศ
-    // (ถ้ารวมกันแล้วใหญ่เกินเพดาน Firestore ระบบจะไล่บีบให้เองตอนบันทึกใน compactTierImages)
-    renderTiers.imgs[tierImgTarget] = await resizeDataUrl(img.src, 320);
-    URL.revokeObjectURL(img.src);
+    const hi = await fitImageToBudget(objUrl);
+    URL.revokeObjectURL(objUrl);
+    renderTiers.imgRefs[tierImgTarget] = {img: hi, imgId: null};   // รูปใหม่ ยังไม่มี imgId จนกว่าจะบันทึก
     state.tierGroups[currentTierBand] = readTierRows();
     renderTiers();
   };
-  img.onerror = () => alert('เปิดรูปไม่สำเร็จ');
-  img.src = URL.createObjectURL(f);
+  img.onerror = () => { URL.revokeObjectURL(objUrl); alert('เปิดรูปไม่สำเร็จ'); };
+  img.src = objUrl;
 }
 function clearTierImg(i){
-  renderTiers.imgs[i] = null;
+  renderTiers.imgRefs[i] = {img: null, imgId: null};
   state.tierGroups[currentTierBand] = readTierRows();
   renderTiers();
 }
@@ -1045,7 +1110,7 @@ function certHTML(s){
       <div class="c-room">${s.room?esc(s.room):''}</div>
       ${hist ? `<div class="c-history">คะแนนสะสมแต่ละรอบ: ${esc(hist)}</div>` : ''}
       <div class="c-rankline">
-        ${r.img
+        ${resolveTierImg(r)
           ? emblemSVG(r, ri.idx, ri.count, sm?60:82)
           : emblemSVG(r, ri.idx, ri.count, sm?62:84, true)}
       </div>
@@ -1223,7 +1288,15 @@ function closeImport(){ document.getElementById('importBg').classList.remove('op
 
 /* ---------- backup ---------- */
 function exportData(){
-  const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+  // ฝังรูปตราลงไปในไฟล์สำรองด้วย เพื่อให้ไฟล์เดียวจบ นำไปกู้คืนในห้องอื่น/เครื่องอื่นได้
+  const snapshot = structuredClone(state);
+  for(const band of GRADE_BANDS){
+    for(const t of (snapshot.tierGroups[band] || [])){
+      const resolved = resolveTierImg(t);
+      if(resolved){ t.img = resolved; t.imgId = null; }
+    }
+  }
+  const blob = new Blob([JSON.stringify(snapshot, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `คะแนนแรงค์-สำรอง-${new Date().toISOString().slice(0,10)}.json`;
