@@ -236,7 +236,7 @@
         <button class="ghost" onclick="document.getElementById('rosterFile').click()">📥 นำเข้ารายชื่อจากไฟล์ Excel</button>
         <input type="file" id="rosterFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importRoster(event)">
         <button class="ghost" onclick="normalizeAllRooms()">🛠 จัดรูปแบบห้อง (ป.51 → ป.5/1)</button>
-        <span class="hint" style="margin-top:0;">แยกชีตตามห้อง ตั้งชื่อชีตเป็น "ป.5-1" หรือ "ป.51" โปรแกรมจะแปลงเป็น "ป.5/1" ให้อัตโนมัติ</span>
+        <span class="hint" style="margin-top:0;">ห้องเดียว: ตั้งชื่อ<b>ไฟล์</b>เป็น "ป.5-1.xlsx" ได้เลย · หลายห้อง: แยกชีตแล้วตั้งชื่อ<b>ชีต</b>เป็น "ป.5-1" — โปรแกรมแปลงเป็น "ป.5/1" ให้อัตโนมัติ</span>
       </div>
     </div>
 
@@ -795,6 +795,23 @@ function normalizeRoom(sn){
   if(m) return m[1]+'.'+m[2]+'/'+m[3];
   return s;
 }
+/* ชื่อห้องที่อยู่ในรูปแบบมาตรฐานแล้ว เช่น ป.5/1, ม.3/2 */
+function looksLikeRoom(s){ return /^[ปม]\.\d\/\d{1,2}$/.test((s||'').trim()); }
+/* ดึงชื่อห้องออกจากข้อความอิสระ (ชื่อชีตหรือชื่อไฟล์) เช่น "รายชื่อนักเรียน ป.5-1" → "ป.5/1" */
+function extractRoomFromText(text){
+  const s = (text||'').trim();
+  if(!s) return '';
+  const whole = normalizeRoom(s);
+  if(looksLikeRoom(whole)) return whole;
+  const m = s.match(/[ปม]\s*\.?\s*\d\s*[-_./ ]?\s*\d{1,2}/);
+  if(m){
+    const found = normalizeRoom(m[0].replace(/\s+/g,''));
+    if(looksLikeRoom(found)) return found;
+  }
+  return '';
+}
+/* ชื่อชีตเริ่มต้นที่ Excel ตั้งให้เอง — ถือว่าไม่สื่อถึงห้อง ให้ไปใช้ชื่อไฟล์แทน */
+const GENERIC_SHEET_RE = /^(sheet|worksheet|แผ่น|ชีต|แผ่นงาน)\s*\d*$/i;
 function normalizeAllRooms(){
   const changes = state.students.filter(s => normalizeRoom(s.room) !== (s.room||'').trim());
   if(!changes.length){ alert('ชื่อห้องทั้งหมดอยู่ในรูปแบบถูกต้องแล้ว ✓'); return; }
@@ -1245,11 +1262,16 @@ function importRoster(ev){
       const wb = XLSX.read(reader.result, {type:'array'});
       const sheets = wb.SheetNames.map(sn => {
         const {names, skippedHeader} = extractNames(XLSX.utils.sheet_to_json(wb.Sheets[sn], {header:1, defval:''}));
-        return { room: normalizeRoom(sn), names, skippedHeader, use: true };
+        return { room: extractRoomFromText(sn) || normalizeRoom(sn), sheetName: sn, names, skippedHeader, use: true };
       }).filter(s => s.names.length);
       if(!sheets.length){ alert('ไม่พบรายชื่อนักเรียนในไฟล์'); return; }
-      if(sheets.length===1 && /^sheet ?1$/i.test(sheets[0].room)){
-        sheets[0].room = f.name.replace(/\.[^.]+$/,'');   // CSV/ชีตเดียวไม่มีชื่อ → ใช้ชื่อไฟล์เป็นห้อง
+      // ไฟล์ชีตเดียวที่ชื่อชีตไม่ได้บอกห้อง (เช่น Sheet1 ที่ Excel ตั้งให้เอง) → ใช้ "ชื่อไฟล์" เป็นชื่อห้องแทน
+      // ครูจึงตั้งแค่ชื่อไฟล์ เช่น "ป.5-1.xlsx" ได้เลย ไม่ต้องเข้าไปเปลี่ยนชื่อชีตใน Excel
+      if(sheets.length === 1 && !looksLikeRoom(sheets[0].room)){
+        const fileBase = f.name.replace(/\.[^.]+$/,'').trim();
+        const fromFile = extractRoomFromText(fileBase);
+        if(fromFile) sheets[0].room = fromFile;
+        else if(GENERIC_SHEET_RE.test(sheets[0].sheetName) && fileBase) sheets[0].room = fileBase;
       }
       rosterPreview = sheets;
       renderImportPreview();
