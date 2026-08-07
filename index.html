@@ -810,8 +810,6 @@ function extractRoomFromText(text){
   }
   return '';
 }
-/* ชื่อชีตเริ่มต้นที่ Excel ตั้งให้เอง — ถือว่าไม่สื่อถึงห้อง ให้ไปใช้ชื่อไฟล์แทน */
-const GENERIC_SHEET_RE = /^(sheet|worksheet|แผ่น|ชีต|แผ่นงาน)\s*\d*$/i;
 function normalizeAllRooms(){
   const changes = state.students.filter(s => normalizeRoom(s.room) !== (s.room||'').trim());
   if(!changes.length){ alert('ชื่อห้องทั้งหมดอยู่ในรูปแบบถูกต้องแล้ว ✓'); return; }
@@ -1265,13 +1263,13 @@ function importRoster(ev){
         return { room: extractRoomFromText(sn) || normalizeRoom(sn), sheetName: sn, names, skippedHeader, use: true };
       }).filter(s => s.names.length);
       if(!sheets.length){ alert('ไม่พบรายชื่อนักเรียนในไฟล์'); return; }
-      // ไฟล์ชีตเดียวที่ชื่อชีตไม่ได้บอกห้อง (เช่น Sheet1 ที่ Excel ตั้งให้เอง) → ใช้ "ชื่อไฟล์" เป็นชื่อห้องแทน
-      // ครูจึงตั้งแค่ชื่อไฟล์ เช่น "ป.5-1.xlsx" ได้เลย ไม่ต้องเข้าไปเปลี่ยนชื่อชีตใน Excel
-      if(sheets.length === 1 && !looksLikeRoom(sheets[0].room)){
+      // ชีตที่ชื่อไม่ได้บอกห้อง (เช่น Sheet1, Class_List ที่ระบบ SIS ของโรงเรียนตั้งให้เอง) → ลองใช้ "ชื่อไฟล์" แทน
+      // ทำเฉพาะตอนมีชีตแบบนี้อยู่ชีตเดียวในไฟล์ (กันไม่ให้หลายห้องจริงๆ ถูกชื่อไฟล์เดียวทับจนปนกัน)
+      const needsFallback = sheets.filter(s => !looksLikeRoom(s.room));
+      if(needsFallback.length === 1){
         const fileBase = f.name.replace(/\.[^.]+$/,'').trim();
         const fromFile = extractRoomFromText(fileBase);
-        if(fromFile) sheets[0].room = fromFile;
-        else if(GENERIC_SHEET_RE.test(sheets[0].sheetName) && fileBase) sheets[0].room = fileBase;
+        needsFallback[0].room = fromFile || fileBase || needsFallback[0].room;
       }
       rosterPreview = sheets;
       renderImportPreview();
