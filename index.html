@@ -120,7 +120,8 @@
   .cert .c-room{font-size:7.5pt; color:#64748b;}
   .cert .c-history{font-size:6pt; color:#475569; margin-top:.8mm; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center;}
   .cert .c-rankline{display:flex; align-items:center; gap:3mm; margin-top:0;}
-  .cert .c-rankline img{max-height:23mm; width:auto !important; filter:drop-shadow(0 .4mm .6mm rgba(0,0,0,.25)); border-radius:3mm;}
+  /* รูปตราที่ครูอัพโหลดเอง — ไม่ใส่เงา/ขอบมน เพื่อให้พื้นหลังโปร่งใสกลืนไปกับใบประกาศแบบราบเรียบ */
+  .cert .c-rankline img{max-height:24mm; width:auto !important;}
   .cert .c-rankline svg{display:block; filter:drop-shadow(0 .4mm .6mm rgba(0,0,0,.25));}
   .cert .c-rank{
     padding:1mm 5mm; border-radius:99px; color:#fff; font-weight:800; font-size:10.5pt;
@@ -442,7 +443,9 @@ function hashPin(pin){
 /* บีบอัดรูปตราแบบ base64 ที่ใหญ่เกินไปให้เล็กลง (ย่อขนาด+แปลงเป็น JPEG คุณภาพปานกลาง)
    ก่อนบันทึกทุกครั้ง กัน Firestore ปฏิเสธเพราะเอกสารเกิน 1MB — และรูปเดียวกันที่ซ้ำกันหลายช่วงชั้น
    จะถูกบีบอัดแค่ครั้งเดียวแล้วใช้ผลลัพธ์ร่วมกัน (ไม่ต้องบีบซ้ำ) */
-function shrinkDataUrl(dataUrl, maxDim=160, quality=0.75){
+/* ย่อรูป — ค่าเริ่มต้นเก็บเป็น PNG เพื่อ "รักษาพื้นหลังโปร่งใส" ให้ตราลอยกลืนไปกับใบประกาศ
+   ตัวเลือก jpeg:true ใช้เฉพาะตอนจำเป็นต้องบีบให้เล็กลงจริงๆ (JPEG ไม่รองรับความโปร่งใส จึงต้องเติมพื้นขาวกันเป็นสีดำ) */
+function resizeDataUrl(dataUrl, maxDim, {jpeg=false, quality=0.85}={}){
   return new Promise(resolve=>{
     const img = new Image();
     img.onload = () => {
@@ -451,27 +454,39 @@ function shrinkDataUrl(dataUrl, maxDim=160, quality=0.75){
       cv.width = Math.max(1, Math.round(img.width*sc));
       cv.height = Math.max(1, Math.round(img.height*sc));
       const ctx = cv.getContext('2d');
-      // เติมพื้นขาวก่อนวาดรูปทับ — กัน JPEG (ไม่รองรับพื้นหลังโปร่งใส) เติมดำให้อัตโนมัติ
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, cv.width, cv.height);
+      if(jpeg){ ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height); }
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
-      resolve(cv.toDataURL('image/jpeg', quality));
+      resolve(jpeg ? cv.toDataURL('image/jpeg', quality) : cv.toDataURL('image/png'));
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
   });
 }
+/* เพดานเอกสารของ Firestore คือ 1,048,576 bytes — กันขอบไว้ให้ข้อมูลนักเรียนโตได้อีก */
+const SAVE_BUDGET = 820000;
+const docSize = () => JSON.stringify(state).length;
 async function compactTierImages(){
-  const seen = new Map();
-  for(const band of GRADE_BANDS){
-    const tiers = state.tierGroups[band];
-    if(!tiers) continue;
-    for(const t of tiers){
-      if(t.img && typeof t.img === 'string' && t.img.startsWith('data:image') && t.img.length > 20000){
-        if(!seen.has(t.img)) seen.set(t.img, await shrinkDataUrl(t.img));
-        t.img = seen.get(t.img);
+  // ถ้ายังไม่ใกล้เต็ม ไม่แตะรูปเลย — กันรูปเบลอจากการบีบซ้ำโดยไม่จำเป็น
+  if(docSize() <= SAVE_BUDGET) return;
+  // ใกล้เต็มแล้วค่อยไล่ลดทีละขั้น: ลดขนาดก่อน (ยังคงความโปร่งใส) แล้วค่อยยอมแลกเป็น JPEG เป็นทางเลือกสุดท้าย
+  const steps = [
+    {maxDim:224, jpeg:false},
+    {maxDim:176, jpeg:false},
+    {maxDim:224, jpeg:true, quality:0.88},
+    {maxDim:176, jpeg:true, quality:0.8},
+    {maxDim:128, jpeg:true, quality:0.7},
+  ];
+  for(const step of steps){
+    const seen = new Map();   // รูปเดียวกันที่ซ้ำหลายช่วงชั้น บีบครั้งเดียวแล้วใช้ผลร่วมกัน
+    for(const band of GRADE_BANDS){
+      for(const t of (state.tierGroups[band] || [])){
+        if(t.img && typeof t.img === 'string' && t.img.startsWith('data:image')){
+          if(!seen.has(t.img)) seen.set(t.img, await resizeDataUrl(t.img, step.maxDim, step));
+          t.img = seen.get(t.img);
+        }
       }
     }
+    if(docSize() <= SAVE_BUDGET) return;
   }
 }
 async function save(){
@@ -917,17 +932,10 @@ function tierImgChosen(ev){
   ev.target.value = '';
   if(!f || tierImgTarget===null) return;
   const img = new Image();
-  img.onload = () => {
-    // ย่อเหลือ 160px + แปลงเป็น JPEG คุณภาพปานกลาง (แทน PNG 384px เดิม) ให้ไฟล์เล็กพอบันทึกขึ้นห้องกลางได้เสมอ
-    const sc = Math.min(1, 160/Math.max(img.width, img.height));
-    const cv = document.createElement('canvas');
-    cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc);
-    const ctx = cv.getContext('2d');
-    // เติมพื้นขาวก่อนวาดรูปทับ — กัน JPEG (ไม่รองรับพื้นหลังโปร่งใส) เติมดำให้อัตโนมัติ
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.drawImage(img, 0, 0, cv.width, cv.height);
-    renderTiers.imgs[tierImgTarget] = cv.toDataURL('image/jpeg', 0.75);
+  img.onload = async () => {
+    // เก็บเป็น PNG 320px — คมพอสำหรับพิมพ์ และรักษาพื้นหลังโปร่งใสให้ตรากลืนไปกับใบประกาศ
+    // (ถ้ารวมกันแล้วใหญ่เกินเพดาน Firestore ระบบจะไล่บีบให้เองตอนบันทึกใน compactTierImages)
+    renderTiers.imgs[tierImgTarget] = await resizeDataUrl(img.src, 320);
     URL.revokeObjectURL(img.src);
     state.tierGroups[currentTierBand] = readTierRows();
     renderTiers();
