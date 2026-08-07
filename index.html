@@ -7,6 +7,41 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script type="module">
+  // เชื่อมต่อ Firebase (Firestore) เพื่อให้ครูหลายคนกรอกคะแนนในห้องเดียวกันแบบเรียลไทม์
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBfrjQqwi3LGT48njbwux7tJYx86_yfiHA",
+    authDomain: "math-rank-app.firebaseapp.com",
+    projectId: "math-rank-app",
+    storageBucket: "math-rank-app.firebasestorage.app",
+    messagingSenderId: "509056664623",
+    appId: "1:509056664623:web:6caf9fbe2813e663d532da"
+  };
+  const fbApp = initializeApp(firebaseConfig);
+  const db = getFirestore(fbApp);
+  let unsub = null;
+
+  // เชื่อมต่อห้อง (roomId) แล้วฟังการเปลี่ยนแปลงแบบเรียลไทม์ — onData(dataOrNull, error)
+  window.__fbConnect = function(roomId, onData){
+    if(unsub){ unsub(); unsub = null; }
+    unsub = onSnapshot(
+      doc(db, 'rooms', roomId),
+      snap => onData(snap.exists() ? snap.data() : null, null),
+      err => onData(null, err)
+    );
+  };
+  window.__fbDisconnect = function(){
+    if(unsub){ unsub(); unsub = null; }
+  };
+  window.__fbSave = function(roomId, data){
+    return setDoc(doc(db, 'rooms', roomId), data);
+  };
+  window.__fbReady = true;
+  window.dispatchEvent(new Event('fbready'));
+</script>
 <style>
   :root{
     --bg:#f4f6fb; --card:#ffffff; --ink:#1f2937; --muted:#6b7280;
@@ -117,9 +152,39 @@
     @page{size:A4 portrait; margin:8mm;}
   }
   #printArea{display:none;}
+
+  /* ---------- หน้าประตูรหัสห้อง (แชร์ข้อมูลร่วมกันหลายครู) ---------- */
+  .pin-gate{
+    position:fixed; inset:0; z-index:200; background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .pin-card{
+    background:#fff; border-radius:18px; padding:30px 28px; max-width:380px; width:100%;
+    text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.25);
+  }
+  .pin-icon{font-size:2.2rem; margin-bottom:6px;}
+  .pin-card h2{font-size:1.2rem; margin-bottom:8px;}
+  .pin-card p{font-size:.85rem; color:var(--muted); margin-bottom:16px; line-height:1.6;}
+  .pin-card input{width:100%; text-align:center; font-size:1.05rem; margin-bottom:12px; letter-spacing:.5px;}
+  .pin-card button{width:100%;}
+  .pin-status{font-size:.82rem; color:var(--muted); margin-top:12px; min-height:1.2em;}
+  #roomIndicator{white-space:nowrap;}
 </style>
 </head>
 <body>
+
+<!-- ===== หน้าประตูรหัสห้อง ===== -->
+<div class="pin-gate" id="pinGate">
+  <div class="pin-card">
+    <div class="pin-icon">🔑</div>
+    <h2>เข้าร่วมห้องคะแนน</h2>
+    <p>กรอกรหัสห้องที่ครูทุกคนใช้ร่วมกัน เพื่อดู/แก้ไขข้อมูลชุดเดียวกันแบบเรียลไทม์ ถ้ายังไม่มีรหัส ตั้งรหัสใหม่ได้เลย (ตั้งอะไรก็ได้ที่จำง่าย แล้วบอกครูท่านอื่นให้ใช้รหัสเดียวกัน)</p>
+    <input type="text" id="pinInput" placeholder="เช่น MATH2569" autocomplete="off">
+    <button onclick="submitPin()">เข้าร่วมห้อง</button>
+    <div class="pin-status" id="pinStatus"></div>
+  </div>
+</div>
+
 <div class="app">
 
   <div class="topbar">
@@ -130,6 +195,7 @@
       </div>
     </div>
     <div class="toolbar-right">
+      <button class="ghost small" id="roomIndicator" onclick="changeRoom()" title="คลิกเพื่อเปลี่ยนห้อง">🔑 ห้อง</button>
       <button class="ghost" onclick="exportData()">⬇ สำรองข้อมูล</button>
       <button class="ghost" onclick="document.getElementById('importFile').click()">⬆ นำเข้าข้อมูล</button>
       <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
@@ -346,7 +412,7 @@ const defaultState = {
   }
 };
 
-let state = load();
+let state = structuredClone(defaultState);
 let modalStudentId = null;
 let currentTierBand = GRADE_BANDS[0];
 
@@ -357,23 +423,87 @@ function migrateTierGroups(s){
   const base = (s && Array.isArray(s.tiers) && s.tiers.length) ? structuredClone(s.tiers) : structuredClone(DEFAULT_TIER_SET);
   return GRADE_BANDS.reduce((o,g)=>{ o[g] = structuredClone(base); return o; }, {});
 }
-function load(){
-  try{
-    const raw = localStorage.getItem(LS_KEY);
-    if(raw){
-      const s = JSON.parse(raw);
-      const merged = {...structuredClone(defaultState), ...s, settings:{...defaultState.settings, ...(s.settings||{})}};
-      merged.tierGroups = migrateTierGroups(s);
-      delete merged.tiers;
-      return merged;
-    }
-  }catch(e){}
-  return structuredClone(defaultState);
+
+/* ---------- ห้องคะแนนร่วมกัน (Firestore แบบเรียลไทม์) ----------
+   ข้อมูลทั้งหมดเก็บอยู่ที่เอกสาร Firestore เดียวต่อ "ห้อง" — ครูทุกคนที่กรอกรหัสห้องเดียวกัน
+   จะเห็น/แก้ไขข้อมูลชุดเดียวกัน ความปลอดภัยอาศัยการที่ roomId (แฮชจากรหัสห้อง) เดา/แจกแจงไม่ได้
+   หมายเหตุ: การบันทึกเขียนทับทั้งเอกสาร ถ้าสองเครื่องบันทึกพร้อมกันในเสี้ยววินาทีเดียวกัน
+   ข้อมูลชุดหลังอาจทับชุดแรก — ในทางปฏิบัติกรณีนี้เกิดยากเพราะครูมักไม่กรอกคะแนนคนเดียวกันพร้อมกันเป๊ะ */
+const PIN_KEY = 'mathRankApp_pin_v1';
+let currentRoomId = null;
+let currentPin = '';
+let firstSyncDone = false;
+
+function hashPin(pin){
+  let h = 5381;
+  const s = (pin||'').trim();
+  for(let i=0;i<s.length;i++){ h = ((h*33) ^ s.charCodeAt(i)) >>> 0; }
+  return 'room_' + h.toString(36);
 }
 function save(){
-  try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
-  catch(e){ alert('บันทึกไม่สำเร็จ: พื้นที่เก็บข้อมูลเต็ม — ลองลบรูปตราที่อัพโหลดเองออกบางส่วน'); }
+  if(!currentRoomId) return;
+  window.__fbSave(currentRoomId, state).catch(err=>{
+    alert('บันทึกไม่สำเร็จ: ' + (err && err.message ? err.message : 'เชื่อมต่อห้องไม่ได้ ลองใหม่อีกครั้ง'));
+  });
 }
+function onRoomData(data, err){
+  if(err){
+    document.getElementById('pinStatus').textContent = 'เชื่อมต่อไม่สำเร็จ: ' + (err.message||'ลองใหม่อีกครั้ง');
+    return;
+  }
+  if(data === null){
+    state = structuredClone(defaultState);   // ห้องใหม่ ยังไม่เคยมีข้อมูล
+  }else{
+    const merged = {...structuredClone(defaultState), ...data, settings:{...defaultState.settings, ...(data.settings||{})}};
+    merged.tierGroups = migrateTierGroups(data);
+    delete merged.tiers;
+    state = merged;
+  }
+  if(!firstSyncDone){
+    firstSyncDone = true;
+    document.getElementById('pinGate').style.display = 'none';
+    stuRoomFilter=''; printRoomFilter=''; printSelected = new Set(); currentTierBand = GRADE_BANDS[0];
+    renderStudents(); renderTiers(); renderPrintTab();
+  }else{
+    // ข้อมูลอัปเดตจากครูคนอื่นแบบเรียลไทม์ — เรนเดอร์ใหม่เฉพาะส่วนที่ปลอดภัย
+    // (ไม่แตะแท็บตั้งค่าแรงค์ขณะเปิดอยู่ กันตัวเลขที่กำลังพิมพ์ค้างอยู่หาย จะอัปเดตตอนสลับแท็บใหม่)
+    renderStudents();
+    if(document.getElementById('page-dashboard').style.display !== 'none') renderDashboard();
+    if(document.getElementById('page-print').style.display !== 'none') renderPrintTab();
+  }
+}
+function connectToRoom(pin){
+  currentPin = pin;
+  currentRoomId = hashPin(pin);
+  firstSyncDone = false;
+  document.getElementById('pinStatus').textContent = 'กำลังเชื่อมต่อ...';
+  document.getElementById('roomIndicator').textContent = '🔑 ห้อง: ' + pin;
+  window.__fbConnect(currentRoomId, onRoomData);
+}
+function submitPin(){
+  const pin = document.getElementById('pinInput').value.trim();
+  if(!pin){ document.getElementById('pinStatus').textContent = 'กรุณากรอกรหัสห้อง'; return; }
+  localStorage.setItem(PIN_KEY, pin);
+  connectToRoom(pin);
+}
+function changeRoom(){
+  if(!confirm('ต้องการออกจากห้อง "' + currentPin + '" ใช่ไหม? (จะกลับไปกรอกรหัสห้องใหม่)')) return;
+  window.__fbDisconnect();
+  localStorage.removeItem(PIN_KEY);
+  currentRoomId = null; firstSyncDone = false;
+  document.getElementById('pinInput').value = '';
+  document.getElementById('pinStatus').textContent = '';
+  document.getElementById('pinGate').style.display = 'flex';
+}
+function bootApp(){
+  const savedPin = localStorage.getItem(PIN_KEY);
+  if(savedPin){
+    document.getElementById('pinInput').value = savedPin;
+    connectToRoom(savedPin);
+  }
+}
+document.getElementById('pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') submitPin(); });
+if(window.__fbReady) bootApp(); else window.addEventListener('fbready', bootApp);
 
 /* ---------- helpers ---------- */
 const totalOf = s => s.entries.reduce((a,e)=>a+e.points, 0);
@@ -726,7 +856,7 @@ function refreshTierEmblems(){
   rows.forEach((row,i)=>{
     const color = row.querySelector('[data-f=color]').value;
     const animal = row.querySelector('[data-f=animal]').value;
-    const img = (renderTiers.imgs||[])[i] || undefined;
+    const img = (renderTiers.imgs||[])[i] || null;
     row.querySelector('.tier-emblem').innerHTML = emblemSVG({color, animal, img}, i, rows.length, 38);
   });
 }
@@ -736,7 +866,7 @@ function readTierRows(){
     animal: row.querySelector('[data-f=animal]').value,
     name:   row.querySelector('[data-f=name]').value.trim() || 'แรงค์',
     min:    Number(row.querySelector('[data-f=min]').value) || 0,
-    img:    (renderTiers.imgs||[])[i] || undefined,
+    img:    (renderTiers.imgs||[])[i] || null,
   }));
 }
 /* รูปตราที่ครูอัพโหลดเอง — ย่อเหลือ 384px เก็บเป็น data URL ในไฟล์ข้อมูล */
@@ -1058,7 +1188,7 @@ function importData(ev){
     try{
       const s = JSON.parse(reader.result);
       if(!Array.isArray(s.students) || !(s.tierGroups || Array.isArray(s.tiers))) throw new Error('bad');
-      if(!confirm(`นำเข้าข้อมูล: นักเรียน ${s.students.length} คน — ข้อมูลปัจจุบันจะถูกแทนที่ ยืนยัน?`)) return;
+      if(!confirm(`นำเข้าข้อมูล: นักเรียน ${s.students.length} คน — ข้อมูลปัจจุบันของห้อง "${currentPin}" จะถูกแทนที่สำหรับครูทุกคนในห้องนี้ ยืนยัน?`)) return;
       state = {...structuredClone(defaultState), ...s, settings:{...defaultState.settings, ...(s.settings||{})}};
       state.tierGroups = migrateTierGroups(s);
       delete state.tiers;
@@ -1076,7 +1206,8 @@ document.getElementById('newName').addEventListener('keydown', e=>{ if(e.key==='
 document.getElementById('newRoom').addEventListener('keydown', e=>{ if(e.key==='Enter') addStudent(); });
 document.getElementById('addPoints').addEventListener('keydown', e=>{ if(e.key==='Enter') addScore(); });
 document.getElementById('addNote').addEventListener('keydown', e=>{ if(e.key==='Enter') addScore(); });
-renderStudents(); renderTiers();
+/* หมายเหตุ: ไม่เรียก renderStudents()/renderTiers() ตรงนี้อีกต่อไป — จะเรียกครั้งแรกใน onRoomData()
+   หลังเชื่อมต่อห้องและได้ข้อมูลจาก Firestore มาแล้วเท่านั้น (ดูฟังก์ชัน bootApp ด้านบน) */
 </script>
 </body>
 </html>
