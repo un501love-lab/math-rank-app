@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>โปรแกรมคะแนนแรงค์คณิตคิดเร็ว</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#f4f6fb; --card:#ffffff; --ink:#1f2937; --muted:#6b7280;
+    --line:#e5e7eb; --accent:#4f46e5; --accent2:#7c3aed;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:'Sarabun', 'Segoe UI', sans-serif; background:var(--bg); color:var(--ink); padding:20px;}
+  h1{font-size:1.5rem;}
+  h2{font-size:1.1rem; margin-bottom:12px; display:flex; align-items:center; gap:8px;}
+  .app{max-width:1100px; margin:0 auto;}
+  .topbar{display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:16px;}
+  .topbar .brand{display:flex; align-items:center; gap:10px;}
+  .brand-icon{width:44px; height:44px; border-radius:12px; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:22px; color:#fff;}
+  .sub{color:var(--muted); font-size:.85rem;}
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.05);}
+  .row{display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;}
+  label{font-size:.8rem; color:var(--muted); display:block; margin-bottom:4px;}
+  input[type=text], input[type=number], input[type=date], select{
+    font-family:inherit; font-size:.95rem; padding:8px 10px; border:1px solid var(--line);
+    border-radius:8px; background:#fff; color:var(--ink); min-width:0;
+  }
+  input:focus, select:focus{outline:2px solid #c7d2fe; border-color:var(--accent);}
+  button{font-family:inherit; font-size:.9rem; font-weight:600; padding:9px 16px; border:none; border-radius:8px; cursor:pointer; background:var(--accent); color:#fff; transition:filter .15s;}
+  button:hover{filter:brightness(1.1);}
+  button.ghost{background:#eef2ff; color:var(--accent);}
+  button.danger{background:#fee2e2; color:#b91c1c;}
+  button.small{padding:5px 10px; font-size:.8rem;}
+  table{width:100%; border-collapse:collapse; font-size:.92rem;}
+  th{text-align:left; padding:8px 10px; color:var(--muted); font-size:.78rem; border-bottom:2px solid var(--line); white-space:nowrap;}
+  td{padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  tr:hover td{background:#f9fafb;}
+  .badge{display:inline-flex; align-items:center; gap:5px; padding:3px 12px; border-radius:999px; color:#fff; font-weight:700; font-size:.82rem; white-space:nowrap;}
+  .num{font-variant-numeric:tabular-nums; font-weight:700;}
+  .progress-note{font-size:.75rem; color:var(--muted);}
+  .empty{text-align:center; color:var(--muted); padding:24px; font-size:.9rem;}
+  .tabs{display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;}
+  .tabs button{background:#fff; color:var(--muted); border:1px solid var(--line);}
+  .tabs button.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .tier-row{display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;}
+  .tier-row input[type=color]{width:42px; height:36px; border:1px solid var(--line); border-radius:8px; padding:2px; cursor:pointer;}
+  .hint{font-size:.8rem; color:var(--muted); margin-top:8px;}
+  .modal-bg{position:fixed; inset:0; background:rgba(0,0,0,.4); display:none; align-items:center; justify-content:center; z-index:50; padding:16px;}
+  .modal-bg.open{display:flex;}
+  .modal{background:#fff; border-radius:14px; padding:20px; width:100%; max-width:520px; max-height:85vh; overflow:auto;}
+  .modal h3{margin-bottom:12px;}
+  .history-item{display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 0; border-bottom:1px dashed var(--line); font-size:.88rem;}
+  .flex-between{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;}
+  .checkbox-cell{width:34px;}
+  .toolbar-right{display:flex; gap:8px; flex-wrap:wrap;}
+  .name-cell{min-width:200px;}
+  .rank-cell{display:inline-flex; align-items:center; gap:6px;}
+  .rank-cell svg{flex:none;}
+  .tier-emblem{display:inline-flex; width:32px; flex:none;}
+  .import-sheet{border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:10px;}
+  .import-names{font-size:.78rem; color:var(--muted); max-height:76px; overflow:auto; margin-top:6px; line-height:1.6;}
+
+  /* ---------- ใบประกาศ (การ์ด) ---------- */
+  .cards-preview{background:#e2e8f0; padding:20px; border-radius:12px;}
+  .cards-grid{display:grid; grid-template-columns:repeat(2, 90mm); justify-content:center; gap:0;}
+  .cards-grid.small{grid-template-columns:repeat(4, 47mm);}
+  .cert{
+    width:90mm; height:62mm; border:1.5px dashed #94a3b8; background:#fff;
+    position:relative; overflow:hidden; display:flex; flex-direction:column;
+    padding:5mm 6mm; break-inside:avoid;
+  }
+  .cert::before{
+    content:''; position:absolute; inset:2.2mm; border:1px solid var(--cert-color,#4f46e5);
+    border-radius:2.5mm; pointer-events:none; opacity:.55;
+  }
+  .cert .c-head{text-align:center; position:relative;}
+  .cert .c-title{font-size:9.5pt; font-weight:800; letter-spacing:.4px; color:var(--cert-color,#4f46e5);}
+  .cert .c-org{font-size:7pt; color:#64748b;}
+  .cert .c-body{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; position:relative;}
+  .cert .c-give{font-size:6.5pt; color:#64748b;}
+  .cert .c-name{font-size:12.5pt; font-weight:800; margin:.5mm 0; line-height:1.2;}
+  .cert .c-room{font-size:7.5pt; color:#64748b;}
+  .cert .c-history{font-size:6pt; color:#475569; margin-top:.8mm; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center;}
+  .cert .c-rankline{display:flex; align-items:center; gap:3mm; margin-top:0;}
+  .cert .c-imgstack{display:flex; flex-direction:column; align-items:center; gap:1mm;}
+  .cert .c-imgstack img{max-height:21mm; width:auto !important; filter:drop-shadow(0 .4mm .6mm rgba(0,0,0,.25));}
+  .cert .c-rankline svg{display:block; filter:drop-shadow(0 .4mm .6mm rgba(0,0,0,.25));}
+  .cert .c-rank{
+    padding:1mm 5mm; border-radius:99px; color:#fff; font-weight:800; font-size:10.5pt;
+    background:var(--cert-color,#4f46e5);
+  }
+  .cert .c-foot{display:flex; justify-content:space-between; align-items:flex-end; font-size:5.5pt; color:#94a3b8; position:relative;}
+  .cert .c-star{position:absolute; font-size:26pt; opacity:.09; right:2mm; bottom:6mm; color:var(--cert-color,#4f46e5);}
+
+  /* ---- การ์ดเล็ก 16 ใบ/แผ่น (4.7 × 6.5 ซม. แนวตั้ง) ---- */
+  .cert.sm{width:47mm; height:65mm; padding:3mm 3mm 2.5mm;}
+  .cert.sm::before{inset:1.6mm; border-radius:2mm;}
+  .cert.sm .c-title{font-size:6.6pt; line-height:1.2;}
+  .cert.sm .c-org{font-size:4.8pt;}
+  .cert.sm .c-name{font-size:9pt; margin:.3mm 0; line-height:1.15;}
+  .cert.sm .c-room{font-size:6pt;}
+  .cert.sm .c-rankline{gap:1.5mm;}
+  .cert.sm .c-rank{font-size:7.5pt; padding:.7mm 3.5mm;}
+  .cert.sm .c-imgstack img{max-height:15mm;}
+  .cert.sm .c-history{font-size:4.3pt; margin-top:.4mm;}
+  .cert.sm .c-foot{font-size:4.6pt;}
+  .cert.sm .c-star{font-size:15pt; right:1mm; bottom:4mm;}
+
+  @media print{
+    body{background:#fff; padding:0;}
+    body.printing .app{display:none;}
+    #printArea{display:block !important;}
+    .cards-grid{gap:0;}
+    @page{size:A4 portrait; margin:8mm;}
+  }
+  #printArea{display:none;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-icon">🏆</div>
+      <div>
+        <h1>โปรแกรมคะแนนแรงค์คณิตคิดเร็ว</h1>
+      </div>
+    </div>
+    <div class="toolbar-right">
+      <button class="ghost" onclick="exportData()">⬇ สำรองข้อมูล</button>
+      <button class="ghost" onclick="document.getElementById('importFile').click()">⬆ นำเข้าข้อมูล</button>
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button id="tab-students" class="active" onclick="showTab('students')">👨‍🎓 นักเรียน & คะแนน</button>
+    <button id="tab-tiers" onclick="showTab('tiers')">⚙️ ตั้งค่าแรงค์</button>
+    <button id="tab-print" onclick="showTab('print')">🖨️ พิมพ์ใบประกาศ</button>
+    <button id="tab-dashboard" onclick="showTab('dashboard')">📊 แดชบอร์ด</button>
+  </div>
+
+  <!-- ===== แท็บ นักเรียน ===== -->
+  <div id="page-students">
+    <div class="panel">
+      <h2>➕ เพิ่มนักเรียน</h2>
+      <div class="row">
+        <div style="flex:2; min-width:180px;">
+          <label>ชื่อ-นามสกุล</label>
+          <input type="text" id="newName" placeholder="เช่น ด.ช.สมชาย ใจดี" style="width:100%">
+        </div>
+        <div style="flex:1; min-width:100px;">
+          <label>ชั้น/ห้อง</label>
+          <input type="text" id="newRoom" placeholder="เช่น ป.5/2" style="width:100%">
+        </div>
+        <button onclick="addStudent()">เพิ่มนักเรียน</button>
+      </div>
+      <div class="row" style="margin-top:12px; align-items:center;">
+        <button class="ghost" onclick="document.getElementById('rosterFile').click()">📥 นำเข้ารายชื่อจากไฟล์ Excel</button>
+        <input type="file" id="rosterFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importRoster(event)">
+        <button class="ghost" onclick="normalizeAllRooms()">🛠 จัดรูปแบบห้อง (ป.51 → ป.5/1)</button>
+        <span class="hint" style="margin-top:0;">แยกชีตตามห้อง ตั้งชื่อชีตเป็น "ป.5-1" หรือ "ป.51" โปรแกรมจะแปลงเป็น "ป.5/1" ให้อัตโนมัติ</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="flex-between" style="margin-bottom:10px;">
+        <h2 style="margin-bottom:0;">📋 รายชื่อนักเรียน</h2>
+        <div class="toolbar-right">
+          <select id="studentRoomFilter" onchange="stuRoomFilter=this.value; renderStudents();" style="min-width:110px;"></select>
+          <button class="danger small" onclick="deleteAllInRoom()">🗑 ลบทั้งห้อง</button>
+          <input type="text" id="searchBox" placeholder="🔍 ค้นหาชื่อ..." oninput="renderStudents()" style="width:180px;">
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>ชื่อ-นามสกุล</th><th>ชั้น/ห้อง</th>
+              <th style="text-align:right;">คะแนนสะสม</th><th>แรงค์</th><th>ถึงแรงค์ถัดไป</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="studentRows"></tbody>
+        </table>
+      </div>
+      <div id="studentEmpty" class="empty" style="display:none;">ยังไม่มีนักเรียน — เพิ่มนักเรียนคนแรกด้านบนได้เลย</div>
+    </div>
+  </div>
+
+  <!-- ===== แท็บ ตั้งค่าแรงค์ ===== -->
+  <div id="page-tiers" style="display:none;">
+    <div class="panel">
+      <h2>⚙️ เกณฑ์แรงค์ (คะแนนขั้นต่ำ)</h2>
+      <div id="tierRows"></div>
+      <div class="row" style="margin-top:10px;">
+        <button class="ghost" onclick="addTier()">+ เพิ่มแรงค์</button>
+        <button onclick="saveTiers()">💾 บันทึกเกณฑ์</button>
+        <input type="file" id="tierImgFile" accept="image/*" style="display:none" onchange="tierImgChosen(event)">
+      </div>
+      <div class="hint">เลือกหัวสัตว์และสีประจำแรงค์ได้เอง หรือกด "📷 ใช้รูปเอง" เพื่ออัพโหลดรูปตราของคุณเอง (เช่น รูปที่สร้างจาก AI) — ระบบจะเรียงแรงค์ตามคะแนนขั้นต่ำโดยอัตโนมัติ (เพชรใต้ตรา = ลำดับขั้น, แรงค์สูงสุดมีมงกุฎ) อย่าลืมกด "💾 บันทึกเกณฑ์" หลังแก้ไข</div>
+    </div>
+    <div class="panel">
+      <h2>🏫 ข้อมูลบนใบประกาศ</h2>
+      <div class="row">
+        <div style="flex:1; min-width:200px;">
+          <label>ชื่อกิจกรรม (บรรทัดหัวใบประกาศ)</label>
+          <input type="text" id="setTitle" style="width:100%">
+        </div>
+        <div style="flex:1; min-width:200px;">
+          <label>ชื่อโรงเรียน / หน่วยงาน</label>
+          <input type="text" id="setOrg" style="width:100%">
+        </div>
+        <div style="flex:1; min-width:150px;">
+          <label>ชื่อครูผู้ลงนาม</label>
+          <input type="text" id="setTeacher" style="width:100%">
+        </div>
+        <button onclick="saveSettings()">💾 บันทึก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== แท็บ พิมพ์ ===== -->
+  <div id="page-print" style="display:none;">
+    <div class="panel">
+      <div class="flex-between" style="margin-bottom:12px;">
+        <h2 style="margin-bottom:0;">🖨️ เลือกนักเรียนที่จะพิมพ์ใบประกาศ</h2>
+        <div class="toolbar-right" style="align-items:flex-end;">
+          <div>
+            <label>ห้อง</label>
+            <select id="printRoomSelect" onchange="printRoomFilter=this.value; renderPrintTab();" style="min-width:110px;"></select>
+          </div>
+          <div>
+            <label>วันที่ออกใบประกาศ</label>
+            <input type="date" id="certDate" onchange="onCertDateChange()">
+          </div>
+          <div>
+            <label>ขนาดใบ</label>
+            <select id="perPageSelect" onchange="onPerPageChange()">
+              <option value="16">เล็ก (16 ใบ/แผ่น)</option>
+              <option value="8">ใหญ่ (8 ใบ/แผ่น)</option>
+            </select>
+          </div>
+          <button class="ghost small" onclick="selectAllPrint(true)">เลือกทั้งหมด</button>
+          <button class="ghost small" onclick="selectAllPrint(false)">ล้างการเลือก</button>
+          <button onclick="doPrint()">🖨️ พิมพ์ (<span id="printCount">0</span> ใบ)</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead><tr><th class="checkbox-cell"></th><th>ชื่อ</th><th>ชั้น/ห้อง</th><th style="text-align:right;">คะแนน</th><th>แรงค์</th></tr></thead>
+          <tbody id="printRows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>👁️ ตัวอย่างใบประกาศ</h2>
+      <div class="cards-preview"><div class="cards-grid" id="previewGrid"></div></div>
+    </div>
+  </div>
+
+  <!-- ===== แท็บ แดชบอร์ด ===== -->
+  <div id="page-dashboard" style="display:none;">
+    <div class="panel">
+      <h2>📊 คะแนนเฉลี่ยแต่ละห้อง</h2>
+      <div class="hint" style="margin-top:0; margin-bottom:12px;">จัดกลุ่มตามสายชั้น เรียงลำดับห้องจากคะแนนสะสมเฉลี่ยสูงสุดไปต่ำสุด — กด "ดูรายชื่อ" เพื่อดูรายละเอียดนักเรียนในห้องนั้น</div>
+      <div id="dashboardContent"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== Modal: คะแนนรายคน ===== -->
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="flex-between">
+      <h3 id="modalTitle">คะแนน</h3>
+      <button class="ghost small" onclick="closeModal()">✕ ปิด</button>
+    </div>
+    <div class="row" style="margin:10px 0 16px;">
+      <div>
+        <label>คะแนนที่ได้ (+/-)</label>
+        <input type="number" id="addPoints" placeholder="เช่น 10" style="width:110px;">
+      </div>
+      <div style="flex:1; min-width:140px;">
+        <label>รายการ/หมายเหตุ</label>
+        <input type="text" id="addNote" placeholder="เช่น แข่งคิดเลขเร็ว ครั้งที่ 3" style="width:100%">
+      </div>
+      <button onclick="addScore()">บันทึกคะแนน</button>
+    </div>
+    <h3 style="font-size:.95rem;">ประวัติคะแนน</h3>
+    <div id="historyList"></div>
+  </div>
+</div>
+
+<!-- ===== Modal: นำเข้ารายชื่อ ===== -->
+<div class="modal-bg" id="importBg" onclick="if(event.target===this)closeImport()">
+  <div class="modal">
+    <div class="flex-between">
+      <h3>📥 นำเข้ารายชื่อนักเรียน</h3>
+      <button class="ghost small" onclick="closeImport()">✕ ปิด</button>
+    </div>
+    <div class="hint" style="margin:8px 0 12px;">ติ๊กเลือกชีต (ห้อง) ที่ต้องการนำเข้า แก้ไขชื่อห้องได้ • ชื่อที่ซ้ำกับที่มีอยู่แล้วในห้องเดียวกันจะถูกข้ามอัตโนมัติ</div>
+    <div id="importSheets"></div>
+    <div class="row" style="margin-top:12px; justify-content:flex-end;">
+      <button onclick="confirmRosterImport()">✓ นำเข้ารายชื่อ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== พื้นที่พิมพ์ ===== -->
+<div id="printArea"><div class="cards-grid" id="printGrid"></div></div>
+
+<script>
+const LS_KEY = 'mathRankApp_v1';
+
+const defaultState = {
+  students: [],
+  tiers: [
+    {name:'บรอนซ์',    min:0,   color:'#b07d4f', animal:'wolf'},
+    {name:'ซิลเวอร์',  min:30,  color:'#8494a7', animal:'bear'},
+    {name:'โกลด์',     min:60,  color:'#d4a017', animal:'tiger'},
+    {name:'แพลตตินัม', min:100, color:'#2bb3a3', animal:'eagle'},
+    {name:'ไดมอนด์',   min:150, color:'#4f8ef7', animal:'lion'},
+    {name:'มาสเตอร์',  min:220, color:'#9333ea', animal:'dragon'},
+  ],
+  settings: {
+    title:'ใบประกาศผลแรงค์คณิตคิดเร็ว',
+    org:'กลุ่มสาระการเรียนรู้คณิตศาสตร์',
+    teacher:'',
+    perPage:16
+  }
+};
+
+let state = load();
+let modalStudentId = null;
+
+function load(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(raw){
+      const s = JSON.parse(raw);
+      return {...structuredClone(defaultState), ...s, settings:{...defaultState.settings, ...(s.settings||{})}};
+    }
+  }catch(e){}
+  return structuredClone(defaultState);
+}
+function save(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+  catch(e){ alert('บันทึกไม่สำเร็จ: พื้นที่เก็บข้อมูลเต็ม — ลองลบรูปตราที่อัพโหลดเองออกบางส่วน'); }
+}
+
+/* ---------- helpers ---------- */
+const totalOf = s => s.entries.reduce((a,e)=>a+e.points, 0);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+function sortedTiers(){ return [...state.tiers].sort((a,b)=>a.min-b.min); }
+function rankInfoOf(total){
+  const ts = sortedTiers();
+  let idx = 0;
+  ts.forEach((t,i)=>{ if(total >= t.min) idx = i; });
+  return {tier: ts[idx], idx, count: ts.length};
+}
+function rankOf(total){ return rankInfoOf(total).tier; }
+
+/* ---------- ตราสัญลักษณ์แรงค์ (SVG) ---------- */
+function shade(hex, pct){
+  const n = parseInt(hex.slice(1), 16);
+  let r = n>>16, g = (n>>8)&255, b = n&255;
+  const t = pct>0 ? 255 : 0, p = Math.abs(pct)/100;
+  r = Math.round(r+(t-r)*p); g = Math.round(g+(t-g)*p); b = Math.round(b+(t-b)*p);
+  return '#'+((r<<16)|(g<<8)|b).toString(16).padStart(6,'0');
+}
+function starPath(cx, cy, R){
+  const pts = [];
+  for(let i=0;i<10;i++){
+    const a = -Math.PI/2 + i*Math.PI/5, r = i%2 ? R*0.45 : R;
+    pts.push((cx+r*Math.cos(a)).toFixed(1)+','+(cy+r*Math.sin(a)).toFixed(1));
+  }
+  return 'M'+pts.join(' L')+' Z';
+}
+function burstPath(cx,cy,R,r,n){
+  const pts = [];
+  for(let i=0;i<2*n;i++){
+    const a = -Math.PI/2 + i*Math.PI/n, rad = i%2 ? r : R;
+    pts.push((cx+rad*Math.cos(a)).toFixed(1)+','+(cy+rad*Math.sin(a)).toFixed(1));
+  }
+  return 'M'+pts.join(' L')+' Z';
+}
+/* หัวสัตว์สไตล์เกม — วาดครึ่งซ้ายแล้วสะท้อนด้วย mir() */
+const mir = h => h + `<g transform="translate(100,0) scale(-1,1)">${h}</g>`;
+const ANIMALS = [
+  {id:'wolf', name:'หมาป่า', draw:P=>mir(`
+    <path d="M38 16 L25 6 L23 34 L36 29 Z" fill="${P.body}"/>
+    <path d="M51 21 L36 25 L28 39 L30 49 L24 57 L35 61 L40 71 L46 80 L51 84 Z" fill="${P.body}"/>
+    <path d="M34 45 L47 49 L38 54 Z" fill="${P.eye}"/>`)
+    +`<path d="M45 77 L55 77 L50 85 Z" fill="${P.line}"/>`},
+  {id:'bear', name:'หมี', draw:P=>mir(`
+    <path d="M34 19 L23 12 L21 28 L32 30 Z" fill="${P.body}"/>
+    <path d="M51 18 L30 22 L22 38 L24 55 L33 67 L43 77 L51 79 Z" fill="${P.body}"/>
+    <path d="M33 43 L44 46 L37 51 Z" fill="${P.eye}"/>`)
+    +`<path d="M40 58 L60 58 L56 77 L44 77 Z" fill="${P.mid}"/>
+    <path d="M46 62 L54 62 L50 70 Z" fill="${P.line}"/>`},
+  {id:'tiger', name:'เสือ', draw:P=>mir(`
+    <path d="M37 17 L26 10 L26 28 L38 26 Z" fill="${P.body}"/>
+    <path d="M51 18 L34 22 L26 34 L27 44 L19 50 L28 53 L21 61 L31 62 L27 70 L37 70 L44 78 L51 80 Z" fill="${P.body}"/>
+    <path d="M33 43 L45 47 L37 52 Z" fill="${P.eye}"/>
+    <path d="M51 25 L42 35 L51 33 Z" fill="${P.line}"/>`)
+    +`<path d="M45 71 L55 71 L50 78 Z" fill="${P.line}"/>`},
+  {id:'lion', name:'สิงโต', draw:P=>`<path d="${burstPath(50,50,41,29,11)}" fill="${P.mid}"/>`
+    +mir(`<path d="M51 26 L33 34 L31 54 L40 68 L51 73 Z" fill="${P.body}"/>
+    <path d="M36 45 L46 48 L39 53 Z" fill="${P.eye}"/>`)
+    +`<path d="M45 59 L55 59 L50 67 Z" fill="${P.line}"/>
+    <path d="M44 71 L56 71 L50 84 Z" fill="${P.body}"/>`},
+  {id:'eagle', name:'อินทรี', draw:P=>mir(`
+    <path d="M51 20 L28 26 L23 42 L32 56 L42 62 L51 64 Z" fill="${P.body}"/>
+    <path d="M28 34 L51 30 L51 37 L36 41 Z" fill="${P.line}"/>
+    <path d="M37 44 L46 42 L43 50 Z" fill="${P.eye}"/>`)
+    +`<path d="M43 54 L57 54 L53 74 L50 88 L47 74 Z" fill="${P.mid}"/>
+    <path d="M47 54 L53 54 L50 62 Z" fill="${P.line}"/>`},
+  {id:'shark', name:'ฉลาม', draw:P=>mir(`
+    <path d="M51 12 L26 40 L22 58 L34 75 L51 81 Z" fill="${P.body}"/>
+    <path d="M31 42 L41 44 L35 51 Z" fill="${P.eye}"/>`)
+    +`<path d="M31 58 L69 58 L61 75 L39 75 Z" fill="${P.line}"/>
+    <path d="M32 58 L36 67 L40 58 L44 67 L48 58 L52 67 L56 58 L60 67 L64 58 Z" fill="#f8fafc"/>`},
+  {id:'bull', name:'กระทิง', draw:P=>mir(`
+    <path d="M41 28 L17 26 L6 7 L15 8 L28 17 L43 23 Z" fill="${P.body}"/>
+    <path d="M51 20 L36 25 L29 42 L31 58 L36 68 L44 78 L51 81 Z" fill="${P.body}"/>
+    <path d="M35 45 L45 47 L39 53 Z" fill="${P.eye}"/>`)
+    +`<path d="M42 66 L58 66 L54 79 L46 79 Z" fill="${P.mid}"/>
+    <path d="M45 70 L48 70 L47 75 Z" fill="${P.line}"/>
+    <path d="M55 70 L52 70 L53 75 Z" fill="${P.line}"/>`},
+  {id:'cobra', name:'งูเห่า', draw:P=>mir(`
+    <path d="M51 10 L26 22 L18 46 L26 70 L40 84 L51 88 Z" fill="${P.body}"/>
+    <path d="M51 26 L38 34 L36 50 L43 62 L51 66 Z" fill="${P.line}"/>
+    <path d="M40 42 L48 44 L44 51 Z" fill="${P.eye}"/>`)
+    +`<path d="M48 66 L52 66 L50 76 Z" fill="${P.line}"/>`},
+  {id:'dragon', name:'มังกร', draw:P=>mir(`
+    <path d="M42 21 L35 4 L26 1 L31 14 L40 26 Z" fill="${P.mid}"/>
+    <path d="M33 27 L23 17 L19 19 L27 30 Z" fill="${P.mid}"/>
+    <path d="M51 23 L36 27 L27 39 L25 50 L33 54 L29 62 L37 64 L41 73 L46 77 L51 79 Z" fill="${P.body}"/>
+    <path d="M34 43 L46 47 L37 52 Z" fill="${P.eye}"/>`)
+    +`<path d="M45 71 L55 71 L50 79 Z" fill="${P.line}"/>
+    <path d="M46 77 L54 77 L50 88 Z" fill="${P.body}"/>`},
+];
+const DEFAULT_ANIMALS = ['wolf','bear','tiger','eagle','lion','dragon'];
+let emblemSeq = 0;
+function emblemSVG(tier, idx, count, size, banner){
+  if(tier.img){
+    return `<img src="${tier.img}" width="${(size*1.09).toFixed(0)}" style="height:auto; display:block;" alt="">`;
+  }
+  const c = tier.color;
+  const cl = shade(c,55), cm = shade(c,10), cd = shade(c,-35), cd2 = shade(c,-62), bgd = shade(c,-78);
+  const gid = 'eg' + (emblemSeq++);
+  const animal = ANIMALS.find(x=>x.id===tier.animal)
+    || ANIMALS.find(x=>x.id===DEFAULT_ANIMALS[Math.min(idx, DEFAULT_ANIMALS.length-1)]);
+  const P = {body:`url(#${gid}b)`, mid:cm, line:bgd, glow:cl, eye:`url(#${gid}e)`};
+  const top = count>1 && idx===count-1;          // แรงค์สูงสุด → มงกุฎทอง
+  const n = Math.min(idx+1, 5);                  // เพชรเล็กใต้ตรา = ลำดับแรงค์
+  let pips = '';
+  for(let i=0;i<n;i++){
+    const x = 50+(i-(n-1)/2)*11;
+    pips += `<path d="M${x} 100 L${x+4.2} 106 L${x} 112 L${x-4.2} 106 Z" fill="${cl}" stroke="${cd2}" stroke-width="1"/>`;
+  }
+  const crown = top ? `<path d="M40 9 L43 1 L47 6 L50 0 L53 6 L57 1 L60 9 Z" fill="#ffd54a" stroke="#b8860b" stroke-width="1.2" stroke-linejoin="round"/>` : '';
+  // ปีกขนนกข้างโล่ (วาดก่อน = อยู่หลังโล่)
+  const wingHalf = `
+    <path d="M20 24 L-10 12 L8 38 Z" fill="url(#${gid}r)"/>
+    <path d="M18 40 L-12 32 L10 56 Z" fill="url(#${gid}r)"/>
+    <path d="M20 56 L-10 56 L16 72 Z" fill="url(#${gid}r)"/>
+    <path d="M24 70 L-4 74 L24 84 Z" fill="url(#${gid}r)"/>`;
+  const wings = `<g stroke="${cd2}" stroke-width="1" stroke-linejoin="round">${mir(wingHalf)}</g>`;
+  // แบบมีป้ายชื่อแรงค์ + เพชรปลายตรา (ใช้บนใบประกาศ)
+  const bannerPart = banner ? `
+    <path d="M14 106 L86 106 L93 118 L86 130 L14 130 L7 118 Z" fill="${bgd}" stroke="url(#${gid}r)" stroke-width="2.5" stroke-linejoin="round"/>
+    <text x="50" y="123" font-size="13" font-weight="800" text-anchor="middle" fill="${cl}">${esc(tier.name||'')}</text>
+    <path d="M50 132 L58 139.5 L50 147 L42 139.5 Z" fill="url(#${gid}b)" stroke="${cd2}" stroke-width="1.5"/>
+    <path d="M50 135.5 L54.5 139.5 L50 143.5 L45.5 139.5 Z" fill="${cl}" opacity=".7"/>` : '';
+  const vh = banner ? 149 : 114;
+  return `<svg viewBox="-12 0 124 ${vh}" width="${(size*1.09).toFixed(0)}" height="${(size*vh/114).toFixed(0)}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="${gid}b" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${cl}"/><stop offset="1" stop-color="${c}"/>
+      </linearGradient>
+      <linearGradient id="${gid}r" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${cl}"/><stop offset="1" stop-color="${cd}"/>
+      </linearGradient>
+      <radialGradient id="${gid}g">
+        <stop offset="0" stop-color="${cm}" stop-opacity=".55"/><stop offset="1" stop-color="${cm}" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="${gid}e">
+        <stop offset="0" stop-color="#ffedc0"/><stop offset=".55" stop-color="#ffb84d"/><stop offset="1" stop-color="#ff8a00"/>
+      </radialGradient>
+    </defs>
+    ${wings}
+    <path d="M50 8 L88 18 L84 58 L50 96 L16 58 L12 18 Z" fill="${bgd}" stroke="url(#${gid}r)" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M50 14 L83 23 L79.5 56 L50 89 L20.5 56 L17 23 Z" fill="none" stroke="${cl}" stroke-width="1.2" opacity=".35"/>
+    <circle cx="50" cy="50" r="34" fill="url(#${gid}g)"/>
+    <g stroke="${cd2}" stroke-width="1" stroke-linejoin="round">${animal.draw(P)}</g>
+    ${crown}
+    ${banner ? bannerPart : pips}
+  </svg>`;
+}
+function nextTierOf(total){
+  return sortedTiers().find(t => t.min > total) || null;
+}
+function thDate(iso){
+  const d = iso ? new Date(iso) : new Date();
+  return d.toLocaleDateString('th-TH', {day:'numeric', month:'short', year:'numeric'});
+}
+function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- tabs ---------- */
+function showTab(name){
+  for(const t of ['students','tiers','print','dashboard']){
+    document.getElementById('page-'+t).style.display = (t===name)?'':'none';
+    document.getElementById('tab-'+t).classList.toggle('active', t===name);
+  }
+  if(name==='print') renderPrintTab();
+  if(name==='tiers') renderTiers();
+  if(name==='dashboard') renderDashboard();
+}
+
+/* ---------- students ---------- */
+/* แปลงชื่อห้องจากรูปแบบที่ Excel ยอมให้ตั้ง (ป.5-1, ป.5_1, ป.51) → ป.5/1 */
+function normalizeRoom(sn){
+  let s = (sn||'').trim();
+  let m = s.match(/^([ปม])\.?\s*(\d)\s*[-_.\\ ]\s*(\d{1,2})$/);
+  if(m) return m[1]+'.'+m[2]+'/'+m[3];
+  m = s.match(/^([ปม])\.?\s*(\d)(\d{1,2})$/);
+  if(m) return m[1]+'.'+m[2]+'/'+m[3];
+  return s;
+}
+function normalizeAllRooms(){
+  const changes = state.students.filter(s => normalizeRoom(s.room) !== (s.room||'').trim());
+  if(!changes.length){ alert('ชื่อห้องทั้งหมดอยู่ในรูปแบบถูกต้องแล้ว ✓'); return; }
+  const ex = changes[0];
+  if(!confirm(`จะแปลงชื่อห้องของนักเรียน ${changes.length} คน เป็นรูปแบบ ป.X/Y\nเช่น "${ex.room}" → "${normalizeRoom(ex.room)}"\nยืนยัน?`)) return;
+  changes.forEach(s => s.room = normalizeRoom(s.room));
+  save(); renderStudents(); renderPrintTab();
+  alert(`แปลงชื่อห้องแล้ว ${changes.length} คน ✓`);
+}
+function editStudent(id){
+  const s = state.students.find(x=>x.id===id);
+  const name = prompt('แก้ไขชื่อ-นามสกุล', s.name);
+  if(name===null) return;
+  const room = prompt('แก้ไขชั้น/ห้อง', s.room||'');
+  if(room===null) return;
+  if(name.trim()) s.name = name.trim();
+  s.room = room.trim();
+  save(); renderStudents();
+}
+let stuRoomFilter = '';
+function addStudent(){
+  const name = document.getElementById('newName').value.trim();
+  const room = document.getElementById('newRoom').value.trim();
+  if(!name){ alert('กรุณากรอกชื่อนักเรียน'); return; }
+  state.students.push({id:uid(), name, room, entries:[]});
+  document.getElementById('newName').value='';
+  document.getElementById('newRoom').value='';
+  save(); renderStudents();
+  document.getElementById('newName').focus();
+}
+function deleteStudent(id){
+  const s = state.students.find(x=>x.id===id);
+  if(!confirm(`ลบ "${s.name}" และประวัติคะแนนทั้งหมด?`)) return;
+  state.students = state.students.filter(x=>x.id!==id);
+  save(); renderStudents();
+}
+function deleteAllInRoom(){
+  if(!stuRoomFilter){ alert('กรุณาเลือกห้องที่ต้องการลบจากดรอปดาวน์ "ห้อง" ก่อน'); return; }
+  const targets = state.students.filter(s =>
+    stuRoomFilter==='__none' ? !(s.room||'').trim() : (s.room||'').trim()===stuRoomFilter);
+  const label = stuRoomFilter==='__none' ? '(ไม่ระบุห้อง)' : stuRoomFilter;
+  if(!targets.length){ alert(`ไม่มีนักเรียนในห้อง "${label}"`); return; }
+  if(!confirm(`ลบนักเรียนทั้งหมด ${targets.length} คน ในห้อง "${label}" พร้อมประวัติคะแนน?\nการลบนี้ไม่สามารถย้อนกลับได้`)) return;
+  const ids = new Set(targets.map(t=>t.id));
+  state.students = state.students.filter(s=>!ids.has(s.id));
+  save(); renderStudents();
+  alert(`ลบนักเรียนห้อง "${label}" แล้ว ${targets.length} คน ✓`);
+}
+function renderStudents(){
+  const q = (document.getElementById('searchBox').value||'').trim().toLowerCase();
+  const tbody = document.getElementById('studentRows');
+  // ดรอปดาวน์ห้องในแท็บนักเรียน
+  const rooms = [...new Set(state.students.map(s=>(s.room||'').trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'th',{numeric:true}));
+  const hasNone = state.students.some(s=>!(s.room||'').trim());
+  if(stuRoomFilter && stuRoomFilter!=='__none' && !rooms.includes(stuRoomFilter)) stuRoomFilter = '';
+  document.getElementById('studentRoomFilter').innerHTML =
+    `<option value="">ทุกห้อง</option>` +
+    rooms.map(r=>`<option value="${esc(r)}" ${stuRoomFilter===r?'selected':''}>${esc(r)}</option>`).join('') +
+    (hasNone ? `<option value="__none" ${stuRoomFilter==='__none'?'selected':''}>(ไม่ระบุห้อง)</option>` : '');
+  const list = state.students
+    .filter(s => !stuRoomFilter || (stuRoomFilter==='__none' ? !(s.room||'').trim() : (s.room||'').trim()===stuRoomFilter))
+    .filter(s => !q || s.name.toLowerCase().includes(q) || (s.room||'').toLowerCase().includes(q))
+    .map(s => ({...s, total: totalOf(s)}))
+    .sort((a,b)=>b.total-a.total);
+  tbody.innerHTML = list.map((s,i)=>{
+    const ri = rankInfoOf(s.total), r = ri.tier, nx = nextTierOf(s.total);
+    const nxTxt = nx ? `อีก <b>${nx.min - s.total}</b> คะแนน → ${esc(nx.name)}` : '🎉 แรงค์สูงสุดแล้ว';
+    return `<tr>
+      <td class="num">${i+1}</td>
+      <td class="name-cell"><b>${esc(s.name)}</b></td>
+      <td>${esc(s.room||'-')}</td>
+      <td class="num" style="text-align:right;">${s.total}</td>
+      <td><span class="rank-cell">${emblemSVG(r, ri.idx, ri.count, 22)}<span class="badge" style="background:${r.color}">${esc(r.name)}</span></span></td>
+      <td><span class="progress-note">${nxTxt}</span></td>
+      <td style="white-space:nowrap; text-align:right;">
+        <button class="small" onclick="openModal('${s.id}')">+ คะแนน</button>
+        <button class="small ghost" onclick="editStudent('${s.id}')">✎ แก้ไข</button>
+        <button class="small danger" onclick="deleteStudent('${s.id}')">ลบ</button>
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('studentEmpty').style.display = state.students.length ? 'none' : '';
+}
+
+/* ---------- score modal ---------- */
+function openModal(id){
+  modalStudentId = id;
+  const s = state.students.find(x=>x.id===id);
+  document.getElementById('modalTitle').textContent = `คะแนนของ ${s.name} (รวม ${totalOf(s)})`;
+  document.getElementById('addPoints').value='';
+  document.getElementById('addNote').value='';
+  renderHistory();
+  document.getElementById('modalBg').classList.add('open');
+  document.getElementById('addPoints').focus();
+}
+function closeModal(){ document.getElementById('modalBg').classList.remove('open'); modalStudentId=null; renderStudents(); }
+function addScore(){
+  const pts = Number(document.getElementById('addPoints').value);
+  if(!pts){ alert('กรุณากรอกคะแนน'); return; }
+  const s = state.students.find(x=>x.id===modalStudentId);
+  s.entries.push({points:pts, note:document.getElementById('addNote').value.trim(), date:new Date().toISOString()});
+  save();
+  document.getElementById('addPoints').value='';
+  document.getElementById('addNote').value='';
+  document.getElementById('modalTitle').textContent = `คะแนนของ ${s.name} (รวม ${totalOf(s)})`;
+  renderHistory();
+  document.getElementById('addPoints').focus();
+}
+function deleteEntry(idx){
+  const s = state.students.find(x=>x.id===modalStudentId);
+  s.entries.splice(idx,1);
+  save();
+  document.getElementById('modalTitle').textContent = `คะแนนของ ${s.name} (รวม ${totalOf(s)})`;
+  renderHistory();
+}
+function renderHistory(){
+  const s = state.students.find(x=>x.id===modalStudentId);
+  const el = document.getElementById('historyList');
+  if(!s.entries.length){ el.innerHTML = '<div class="empty">ยังไม่มีประวัติคะแนน</div>'; return; }
+  el.innerHTML = [...s.entries].map((e,idx)=>({...e,idx})).reverse().map(e=>`
+    <div class="history-item">
+      <span>${thDate(e.date)} — ${esc(e.note||'ไม่ระบุรายการ')}</span>
+      <span style="display:flex; gap:8px; align-items:center;">
+        <b class="num" style="color:${e.points>=0?'#059669':'#dc2626'}">${e.points>=0?'+':''}${e.points}</b>
+        <button class="small danger" onclick="deleteEntry(${e.idx})">✕</button>
+      </span>
+    </div>`).join('');
+}
+
+/* ---------- tiers ---------- */
+function renderTiers(){
+  const ts = sortedTiers();
+  renderTiers.imgs = ts.map(t=>t.img||null);
+  document.getElementById('tierRows').innerHTML = ts.map((t,i)=>{
+    const cur = (ANIMALS.some(a=>a.id===t.animal) && t.animal) || DEFAULT_ANIMALS[Math.min(i, DEFAULT_ANIMALS.length-1)];
+    return `
+    <div class="tier-row" data-i="${i}">
+      <span class="tier-emblem">${emblemSVG(t, i, ts.length, 38)}</span>
+      <select data-f="animal" onchange="refreshTierEmblems()" style="width:120px; font-family:inherit; font-size:.9rem; padding:7px 8px; border:1px solid var(--line); border-radius:8px;">
+        ${ANIMALS.map(a=>`<option value="${a.id}" ${a.id===cur?'selected':''}>${a.name}</option>`).join('')}
+      </select>
+      <input type="color" value="${t.color}" data-f="color" oninput="refreshTierEmblems()">
+      <input type="text" value="${esc(t.name)}" data-f="name" placeholder="ชื่อแรงค์" style="width:150px;">
+      <span class="sub">คะแนนขั้นต่ำ</span>
+      <input type="number" value="${t.min}" data-f="min" style="width:90px;">
+      <button class="small ghost" onclick="uploadTierImg(${i})">📷 ใช้รูปเอง</button>
+      ${t.img ? `<button class="small danger" onclick="clearTierImg(${i})">✕ รูป</button>` : ''}
+      <button class="small danger" onclick="removeTier(${i})">ลบ</button>
+    </div>`;
+  }).join('');
+  document.getElementById('setTitle').value = state.settings.title;
+  document.getElementById('setOrg').value = state.settings.org;
+  document.getElementById('setTeacher').value = state.settings.teacher||'';
+}
+function refreshTierEmblems(){
+  const rows = [...document.querySelectorAll('.tier-row')];
+  rows.forEach((row,i)=>{
+    const color = row.querySelector('[data-f=color]').value;
+    const animal = row.querySelector('[data-f=animal]').value;
+    const img = (renderTiers.imgs||[])[i] || undefined;
+    row.querySelector('.tier-emblem').innerHTML = emblemSVG({color, animal, img}, i, rows.length, 38);
+  });
+}
+function readTierRows(){
+  return [...document.querySelectorAll('.tier-row')].map((row,i)=>({
+    color:  row.querySelector('[data-f=color]').value,
+    animal: row.querySelector('[data-f=animal]').value,
+    name:   row.querySelector('[data-f=name]').value.trim() || 'แรงค์',
+    min:    Number(row.querySelector('[data-f=min]').value) || 0,
+    img:    (renderTiers.imgs||[])[i] || undefined,
+  }));
+}
+/* รูปตราที่ครูอัพโหลดเอง — ย่อเหลือ 384px เก็บเป็น data URL ในไฟล์ข้อมูล */
+let tierImgTarget = null;
+function uploadTierImg(i){
+  tierImgTarget = i;
+  document.getElementById('tierImgFile').click();
+}
+function tierImgChosen(ev){
+  const f = ev.target.files[0];
+  ev.target.value = '';
+  if(!f || tierImgTarget===null) return;
+  const img = new Image();
+  img.onload = () => {
+    const sc = Math.min(1, 384/Math.max(img.width, img.height));
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    renderTiers.imgs[tierImgTarget] = cv.toDataURL('image/png');
+    URL.revokeObjectURL(img.src);
+    state.tiers = readTierRows();
+    renderTiers();
+  };
+  img.onerror = () => alert('เปิดรูปไม่สำเร็จ');
+  img.src = URL.createObjectURL(f);
+}
+function clearTierImg(i){
+  renderTiers.imgs[i] = null;
+  state.tiers = readTierRows();
+  renderTiers();
+}
+function addTier(){
+  state.tiers = readTierRows();
+  const maxMin = Math.max(0, ...state.tiers.map(t=>t.min));
+  state.tiers.push({name:'แรงค์ใหม่', min:maxMin+50, color:'#e11d48', animal:'shark'});
+  renderTiers();
+}
+function removeTier(i){
+  const ts = readTierRows();
+  if(ts.length<=1){ alert('ต้องมีอย่างน้อย 1 แรงค์'); return; }
+  ts.splice(i,1);
+  state.tiers = ts;
+  renderTiers();
+}
+function saveTiers(){
+  state.tiers = readTierRows().sort((a,b)=>a.min-b.min);
+  save(); renderTiers(); renderStudents();
+  alert('บันทึกเกณฑ์แรงค์แล้ว ✓');
+}
+function saveSettings(){
+  state.settings.title = document.getElementById('setTitle').value.trim() || defaultState.settings.title;
+  state.settings.org = document.getElementById('setOrg').value.trim();
+  state.settings.teacher = document.getElementById('setTeacher').value.trim();
+  save();
+  alert('บันทึกข้อมูลใบประกาศแล้ว ✓');
+}
+
+/* ---------- print ---------- */
+let printSelected = new Set();
+let printRoomFilter = '';
+function printFilteredStudents(){
+  const f = printRoomFilter;
+  return state.students
+    .filter(s => !f || (f==='__none' ? !(s.room||'').trim() : (s.room||'').trim()===f))
+    .map(s=>({...s,total:totalOf(s)})).sort((a,b)=>b.total-a.total);
+}
+function renderPrintTab(){
+  // สร้างตัวเลือกห้องจากรายชื่อที่มีอยู่
+  const rooms = [...new Set(state.students.map(s=>(s.room||'').trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'th',{numeric:true}));
+  const hasNone = state.students.some(s=>!(s.room||'').trim());
+  if(printRoomFilter && printRoomFilter!=='__none' && !rooms.includes(printRoomFilter)) printRoomFilter = '';
+  document.getElementById('printRoomSelect').innerHTML =
+    `<option value="">ทุกห้อง</option>` +
+    rooms.map(r=>`<option value="${esc(r)}" ${printRoomFilter===r?'selected':''}>${esc(r)}</option>`).join('') +
+    (hasNone ? `<option value="__none" ${printRoomFilter==='__none'?'selected':''}>(ไม่ระบุห้อง)</option>` : '');
+  const list = printFilteredStudents();
+  for(const id of [...printSelected]) if(!state.students.some(s=>s.id===id)) printSelected.delete(id);
+  document.getElementById('printRows').innerHTML = list.map(s=>{
+    const ri = rankInfoOf(s.total), r = ri.tier;
+    return `<tr>
+      <td class="checkbox-cell"><input type="checkbox" ${printSelected.has(s.id)?'checked':''} onchange="togglePrint('${s.id}', this.checked)"></td>
+      <td class="name-cell">${esc(s.name)}</td><td>${esc(s.room||'-')}</td>
+      <td class="num" style="text-align:right;">${s.total}</td>
+      <td><span class="rank-cell">${emblemSVG(r, ri.idx, ri.count, 22)}<span class="badge" style="background:${r.color}">${esc(r.name)}</span></span></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" class="empty">ยังไม่มีนักเรียน</td></tr>';
+  const dateEl = document.getElementById('certDate');
+  if(!dateEl.value) dateEl.value = state.settings.certDate || new Date().toISOString().slice(0,10);
+  document.getElementById('perPageSelect').value = String(Number(state.settings.perPage)===8 ? 8 : 16);
+  updatePreview();
+}
+function togglePrint(id, on){ on ? printSelected.add(id) : printSelected.delete(id); renderPrintTab(); }
+function selectAllPrint(on){
+  // เลือก/ล้าง เฉพาะรายชื่อในห้องที่กรองอยู่ (สะสมข้ามห้องได้)
+  const ids = printFilteredStudents().map(s=>s.id);
+  ids.forEach(id => on ? printSelected.add(id) : printSelected.delete(id));
+  renderPrintTab();
+}
+function certDateVal(){
+  const el = document.getElementById('certDate');
+  return (el && el.value) || new Date().toISOString().slice(0,10);
+}
+function onCertDateChange(){
+  state.settings.certDate = document.getElementById('certDate').value;
+  save(); updatePreview();
+}
+function historyLine(s){
+  if(!s.entries.length) return '';
+  let sum = 0;
+  const steps = s.entries.map(e => { sum += e.points; return sum; });
+  return steps.join(' → ');
+}
+function certHTML(s){
+  const total = totalOf(s), ri = rankInfoOf(total), r = ri.tier;
+  const sm = Number(state.settings.perPage) === 16;
+  const hist = historyLine(s);
+  return `<div class="cert${sm?' sm':''}" style="--cert-color:${r.color}">
+    <div class="c-head">
+      <div class="c-title">${esc(state.settings.title)}</div>
+      <div class="c-org">${esc(state.settings.org)}</div>
+    </div>
+    <div class="c-body">
+      <div class="c-star">★</div>
+      <div class="c-name">${esc(s.name)}</div>
+      <div class="c-room">${s.room?esc(s.room):''}</div>
+      ${hist ? `<div class="c-history">คะแนนสะสมแต่ละรอบ: ${esc(hist)}</div>` : ''}
+      <div class="c-rankline">
+        ${r.img
+          ? `<span class="c-imgstack">${emblemSVG(r, ri.idx, ri.count, sm?54:74)}<span class="c-rank">${esc(r.name)}</span></span>`
+          : emblemSVG(r, ri.idx, ri.count, sm?62:84, true)}
+      </div>
+    </div>
+    <div class="c-foot">
+      <span>${state.settings.teacher?('ครูผู้ดูแล: '+esc(state.settings.teacher)):''}</span>
+      <span>ให้ไว้ ณ วันที่ ${thDate(certDateVal())}</span>
+    </div>
+  </div>`;
+}
+function gridClass(){ return 'cards-grid' + (Number(state.settings.perPage)===16 ? ' small' : ''); }
+function onPerPageChange(){
+  state.settings.perPage = Number(document.getElementById('perPageSelect').value);
+  save(); updatePreview();
+}
+function selectedStudents(){
+  return state.students.filter(s=>printSelected.has(s.id))
+    .map(s=>({...s,total:totalOf(s)})).sort((a,b)=>b.total-a.total);
+}
+function updatePreview(){
+  const sel = selectedStudents();
+  document.getElementById('printCount').textContent = sel.length;
+  const sample = sel.length ? sel.slice(0,2) : (state.students.length ? [ {...state.students[0]} ] : [{id:'x', name:'ด.ช.ตัวอย่าง ทดลองพิมพ์', room:'ป.5/2', entries:[{points:75}]}]);
+  const pg = document.getElementById('previewGrid');
+  pg.className = gridClass();
+  pg.innerHTML = sample.map(certHTML).join('');
+}
+function doPrint(){
+  const sel = selectedStudents();
+  if(!sel.length){ alert('กรุณาเลือกนักเรียนอย่างน้อย 1 คน'); return; }
+  const pg = document.getElementById('printGrid');
+  pg.className = gridClass();
+  pg.innerHTML = sel.map(certHTML).join('');
+  document.body.classList.add('printing');
+  window.print();
+  document.body.classList.remove('printing');
+}
+
+/* ---------- แดชบอร์ด: คะแนนเฉลี่ยแต่ละห้อง ---------- */
+function gradeLevelOf(room){
+  const r = (room||'').trim();
+  if(!r) return '(ไม่ระบุห้อง)';
+  // ม.4-6 นับรวมเป็นสายชั้นเดียวกัน (ม.ปลาย) — เทียบคะแนนเฉลี่ยข้ามระดับชั้นได้ในตารางเดียว
+  if(/^ม\.?\s*[456](\/|$)/.test(r)) return 'ม.ปลาย (ม.4-6)';
+  const i = r.indexOf('/');
+  return i>=0 ? r.slice(0,i) : r;
+}
+function roomStats(){
+  const byRoom = {};
+  state.students.forEach(s=>{
+    const room = (s.room||'').trim() || '(ไม่ระบุห้อง)';
+    if(!byRoom[room]) byRoom[room] = {room, level: gradeLevelOf(s.room), count:0, sum:0};
+    byRoom[room].count++;
+    byRoom[room].sum += totalOf(s);
+  });
+  return Object.values(byRoom).map(r=>({...r, avg: r.count ? r.sum/r.count : 0}));
+}
+function renderDashboard(){
+  const stats = roomStats();
+  const el = document.getElementById('dashboardContent');
+  if(!stats.length){ el.innerHTML = '<div class="empty">ยังไม่มีข้อมูลนักเรียน</div>'; return; }
+  const levels = [...new Set(stats.map(r=>r.level))]
+    .sort((a,b)=>a==='(ไม่ระบุห้อง)' ? 1 : b==='(ไม่ระบุห้อง)' ? -1 : a.localeCompare(b,'th',{numeric:true}));
+  const medal = i => i===0?' 🥇':i===1?' 🥈':i===2?' 🥉':'';
+  el.innerHTML = levels.map(level=>{
+    const rooms = stats.filter(r=>r.level===level).sort((a,b)=>b.avg-a.avg);
+    return `<div style="margin-bottom:18px;">
+      <h2 style="font-size:1rem;">📈 สายชั้น ${esc(level)}</h2>
+      <div style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>อันดับ</th><th>ห้อง</th><th style="text-align:right;">จำนวนนักเรียน</th><th style="text-align:right;">คะแนนเฉลี่ย</th><th></th></tr></thead>
+        <tbody>
+        ${rooms.map((r,i)=>`<tr>
+          <td class="num">${i+1}${medal(i)}</td>
+          <td><b>${esc(r.room)}</b></td>
+          <td class="num" style="text-align:right;">${r.count}</td>
+          <td class="num" style="text-align:right;">${r.avg.toFixed(1)}</td>
+          <td style="text-align:right;"><button class="small ghost" data-room="${esc(r.room)}" onclick="viewRoomDetail(this.dataset.room)">ดูรายชื่อ</button></td>
+        </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+function viewRoomDetail(room){
+  stuRoomFilter = room==='(ไม่ระบุห้อง)' ? '__none' : room;
+  document.getElementById('searchBox').value = '';
+  showTab('students');
+  renderStudents();
+}
+
+/* ---------- นำเข้ารายชื่อจาก Excel ---------- */
+let rosterPreview = null;
+/* คำนำหน้าชื่อนักเรียนไทย — ถ้าพบคำเหล่านี้ในแถว ถือว่าเป็นข้อมูลนักเรียนจริงแน่นอน
+   ห้ามข้ามทิ้งแม้ข้อความในแถวจะดันไปตรงกับคำที่ใช้ตรวจจับหัวตาราง (เช่น มีคอลัมน์ "ครูที่ปรึกษา" ต่อแถว
+   หรือหัวตารางถูกพิมพ์ซ้ำทุกหน้าในไฟล์รายชื่อหลายหน้า) — ป้องกันปัญหาลบทั้งแถวทิ้งทั้งที่เป็นชื่อจริง */
+const NAME_PREFIX_RE = /(ด\.ช\.|ด\.ญ\.|เด็กชาย|เด็กหญิง|นางสาว|นาย|นาง)/;
+/* เซลล์ที่อยู่แถวเดียวกับนักเรียนแต่ไม่ใช่ส่วนของชื่อ — ชื่อครูที่ปรึกษา, ห้อง/ชั้น, รหัสประจำตัว
+   ใช้ "มีตัวเลข" เป็นเกณฑ์ได้ เพราะชื่อคนไทยไม่มีตัวเลข (ป.5/2, 12345, ก12345 จึงถูกตัดหมด) */
+const NON_NAME_CELL_RE = /ครู|อาจารย์|ที่ปรึกษา|[0-9๐-๙]/;
+function extractNames(rows){
+  const headerRe = /ชื่อ|สกุล|ลำดับ|เลขที่|เลขประจำตัว|รายชื่อ|ระดับ|ห้อง|ชั้น|หมายเหตุ|จำนวน|ครู|no\.?$|name/i;
+  const names = [];
+  let skippedHeader = 0;
+  for(const row of rows){
+    // ตัดคอลัมน์ที่ไม่เกี่ยวกับชื่อออกก่อน แล้วรวมเซลล์ที่เหลือทั้งหมดเป็นชื่อเดียว
+    // รองรับทั้งชื่อเต็มในเซลล์เดียว และชื่อที่ถูกแยกเป็นหลายคอลัมน์ (คำนำหน้า | ชื่อ | นามสกุล)
+    const strs = (row||[])
+      .filter(c => typeof c === 'string' && c.trim() && isNaN(Number(c.replace(/[,\s]/g,''))))
+      .map(s => s.trim())
+      .filter(s => !NON_NAME_CELL_RE.test(s));
+    if(!strs.length) continue;
+    const joined = strs.join(' ').replace(/\s+/g,' ');
+    if(!NAME_PREFIX_RE.test(joined) && headerRe.test(joined)){ skippedHeader++; continue; }  // ข้ามแถวหัวตาราง (เว้นแต่มีคำนำหน้าชื่อ)
+    if(!/[ก-๙a-zA-Z]/.test(joined)) continue;        // ต้องมีตัวอักษรจริง
+    names.push(joined);
+  }
+  return {names, skippedHeader};
+}
+function importRoster(ev){
+  const f = ev.target.files[0];
+  ev.target.value = '';
+  if(!f) return;
+  if(typeof XLSX === 'undefined'){
+    alert('ตัวอ่านไฟล์ Excel ยังไม่ถูกโหลด — กรุณาเชื่อมต่ออินเทอร์เน็ตแล้วรีเฟรชหน้า (F5) หนึ่งครั้ง');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const wb = XLSX.read(reader.result, {type:'array'});
+      const sheets = wb.SheetNames.map(sn => {
+        const {names, skippedHeader} = extractNames(XLSX.utils.sheet_to_json(wb.Sheets[sn], {header:1, defval:''}));
+        return { room: normalizeRoom(sn), names, skippedHeader, use: true };
+      }).filter(s => s.names.length);
+      if(!sheets.length){ alert('ไม่พบรายชื่อนักเรียนในไฟล์'); return; }
+      if(sheets.length===1 && /^sheet ?1$/i.test(sheets[0].room)){
+        sheets[0].room = f.name.replace(/\.[^.]+$/,'');   // CSV/ชีตเดียวไม่มีชื่อ → ใช้ชื่อไฟล์เป็นห้อง
+      }
+      rosterPreview = sheets;
+      renderImportPreview();
+      document.getElementById('importBg').classList.add('open');
+    }catch(e){ alert('อ่านไฟล์ไม่สำเร็จ: ' + e.message); }
+  };
+  reader.readAsArrayBuffer(f);
+}
+function renderImportPreview(){
+  document.getElementById('importSheets').innerHTML = rosterPreview.map((s,i)=>`
+    <div class="import-sheet">
+      <div class="row" style="align-items:center;">
+        <input type="checkbox" ${s.use?'checked':''} onchange="rosterPreview[${i}].use=this.checked">
+        <span class="sub">ห้อง</span>
+        <input type="text" value="${esc(s.room)}" onchange="rosterPreview[${i}].room=this.value.trim()" style="width:130px;">
+        <b>${s.names.length} คน</b>
+        ${s.skippedHeader ? `<span class="sub">(ข้ามแถวหัวตาราง/อื่นๆ ${s.skippedHeader} แถว — ถ้าคาดว่าจำนวนน้อยไป ให้ตรวจไฟล์ต้นฉบับ)</span>` : ''}
+      </div>
+      <div class="import-names">${s.names.map(esc).join(' • ')}</div>
+    </div>`).join('');
+}
+function confirmRosterImport(){
+  let added = 0, skipped = 0;
+  for(const s of rosterPreview){
+    if(!s.use) continue;
+    for(const name of s.names){
+      if(state.students.some(x => x.name===name && (x.room||'')===s.room)){ skipped++; continue; }
+      state.students.push({id:uid(), name, room:s.room, entries:[]});
+      added++;
+    }
+  }
+  save(); renderStudents(); closeImport();
+  alert(`นำเข้ารายชื่อแล้ว ${added} คน${skipped?` (ข้ามชื่อซ้ำ ${skipped} คน)`:''} ✓`);
+}
+function closeImport(){ document.getElementById('importBg').classList.remove('open'); rosterPreview=null; }
+
+/* ---------- backup ---------- */
+function exportData(){
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `คะแนนแรงค์-สำรอง-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function importData(ev){
+  const f = ev.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const s = JSON.parse(reader.result);
+      if(!Array.isArray(s.students) || !Array.isArray(s.tiers)) throw new Error('bad');
+      if(!confirm(`นำเข้าข้อมูล: นักเรียน ${s.students.length} คน — ข้อมูลปัจจุบันจะถูกแทนที่ ยืนยัน?`)) return;
+      state = {...structuredClone(defaultState), ...s, settings:{...defaultState.settings, ...(s.settings||{})}};
+      save(); renderStudents(); renderTiers(); renderPrintTab();
+      alert('นำเข้าข้อมูลสำเร็จ ✓');
+    }catch(e){ alert('ไฟล์ไม่ถูกต้อง'); }
+  };
+  reader.readAsText(f);
+  ev.target.value='';
+}
+
+/* ---------- init ---------- */
+document.getElementById('newName').addEventListener('keydown', e=>{ if(e.key==='Enter') addStudent(); });
+document.getElementById('newRoom').addEventListener('keydown', e=>{ if(e.key==='Enter') addStudent(); });
+document.getElementById('addPoints').addEventListener('keydown', e=>{ if(e.key==='Enter') addScore(); });
+document.getElementById('addNote').addEventListener('keydown', e=>{ if(e.key==='Enter') addScore(); });
+renderStudents(); renderTiers();
+</script>
+</body>
+</html>
