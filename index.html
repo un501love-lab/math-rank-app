@@ -194,13 +194,14 @@
   <div id="page-tiers" style="display:none;">
     <div class="panel">
       <h2>⚙️ เกณฑ์แรงค์ (คะแนนขั้นต่ำ)</h2>
+      <div class="tabs" id="tierBandTabs" style="margin-bottom:14px;"></div>
       <div id="tierRows"></div>
       <div class="row" style="margin-top:10px;">
         <button class="ghost" onclick="addTier()">+ เพิ่มแรงค์</button>
-        <button onclick="saveTiers()">💾 บันทึกเกณฑ์</button>
+        <button onclick="saveTiers()">💾 บันทึกเกณฑ์ (ทุกช่วงชั้น)</button>
         <input type="file" id="tierImgFile" accept="image/*" style="display:none" onchange="tierImgChosen(event)">
       </div>
-      <div class="hint">เลือกหัวสัตว์และสีประจำแรงค์ได้เอง หรือกด "📷 ใช้รูปเอง" เพื่ออัพโหลดรูปตราของคุณเอง (เช่น รูปที่สร้างจาก AI) — ระบบจะเรียงแรงค์ตามคะแนนขั้นต่ำโดยอัตโนมัติ (เพชรใต้ตรา = ลำดับขั้น, แรงค์สูงสุดมีมงกุฎ) อย่าลืมกด "💾 บันทึกเกณฑ์" หลังแก้ไข</div>
+      <div class="hint">แยกเกณฑ์แรงค์ตามช่วงชั้นได้ — สลับแท็บด้านบนเพื่อตั้งคะแนนของแต่ละช่วงชั้นแยกกัน เลือกหัวสัตว์และสีประจำแรงค์ได้เอง หรือกด "📷 ใช้รูปเอง" เพื่ออัพโหลดรูปตราของคุณเอง — ระบบจะเรียงแรงค์ตามคะแนนขั้นต่ำโดยอัตโนมัติ (เพชรใต้ตรา = ลำดับขั้น, แรงค์สูงสุดมีมงกุฎ) การสลับแท็บจะเก็บค่าที่แก้ไว้ในหน่วยความจำให้ แต่ต้องกด "💾 บันทึกเกณฑ์" เพื่อบันทึกทุกช่วงชั้นลงเครื่อง</div>
     </div>
     <div class="panel">
       <h2>🏫 ข้อมูลบนใบประกาศ</h2>
@@ -316,16 +317,27 @@
 <script>
 const LS_KEY = 'mathRankApp_v1';
 
+/* ช่วงชั้นสำหรับแยกเกณฑ์แรงค์ — "อื่นๆ" เป็นตัวสำรองสำหรับห้องที่ไม่เข้า 3 กลุ่มนี้ (เช่น อนุบาล หรือไม่ระบุห้อง) */
+const GRADE_BANDS = ['ป.1-3', 'ป.4-6', 'ม.1-6', 'อื่นๆ'];
+const GRADE_BAND_LABELS = {'ป.1-3':'ป.1-3', 'ป.4-6':'ป.4-6', 'ม.1-6':'ม.1-6', 'อื่นๆ':'อื่นๆ (ห้องอื่น/ไม่ระบุ)'};
+function gradeBandOf(room){
+  const r = (room||'').trim();
+  let m = r.match(/^ป\.?\s*([1-9])/);
+  if(m){ const n=+m[1]; if(n<=3) return 'ป.1-3'; if(n<=6) return 'ป.4-6'; }
+  if(/^ม\.?\s*[1-9]/.test(r)) return 'ม.1-6';
+  return 'อื่นๆ';
+}
+const DEFAULT_TIER_SET = [
+  {name:'บรอนซ์',    min:0,   color:'#b07d4f', animal:'wolf'},
+  {name:'ซิลเวอร์',  min:15,  color:'#8494a7', animal:'bear'},
+  {name:'โกลด์',     min:35,  color:'#d4a017', animal:'tiger'},
+  {name:'แพลตตินัม', min:70,  color:'#2bb3a3', animal:'eagle'},
+  {name:'ไดมอนด์',   min:120, color:'#4f8ef7', animal:'lion'},
+  {name:'มาสเตอร์',  min:200, color:'#9333ea', animal:'dragon'},
+];
 const defaultState = {
   students: [],
-  tiers: [
-    {name:'บรอนซ์',    min:0,   color:'#b07d4f', animal:'wolf'},
-    {name:'ซิลเวอร์',  min:30,  color:'#8494a7', animal:'bear'},
-    {name:'โกลด์',     min:60,  color:'#d4a017', animal:'tiger'},
-    {name:'แพลตตินัม', min:100, color:'#2bb3a3', animal:'eagle'},
-    {name:'ไดมอนด์',   min:150, color:'#4f8ef7', animal:'lion'},
-    {name:'มาสเตอร์',  min:220, color:'#9333ea', animal:'dragon'},
-  ],
+  tierGroups: GRADE_BANDS.reduce((o,g)=>{ o[g] = structuredClone(DEFAULT_TIER_SET); return o; }, {}),
   settings: {
     title:'ใบประกาศผลแรงค์คณิตคิดเร็ว',
     org:'กลุ่มสาระการเรียนรู้คณิตศาสตร์',
@@ -336,13 +348,24 @@ const defaultState = {
 
 let state = load();
 let modalStudentId = null;
+let currentTierBand = GRADE_BANDS[0];
 
+/* รองรับข้อมูลเก่าที่มี tiers เป็น array เดี่ยว (ก่อนแยกตามช่วงชั้น) โดยใช้ชุดเดิมเป็นค่าเริ่มต้นของทุกช่วงชั้น
+   เพื่อไม่ให้การตั้งค่าที่ครูปรับไว้แล้ว (สี/สัตว์/รูปที่อัพโหลดเอง) หายไป */
+function migrateTierGroups(s){
+  if(s && s.tierGroups) return structuredClone(s.tierGroups);
+  const base = (s && Array.isArray(s.tiers) && s.tiers.length) ? structuredClone(s.tiers) : structuredClone(DEFAULT_TIER_SET);
+  return GRADE_BANDS.reduce((o,g)=>{ o[g] = structuredClone(base); return o; }, {});
+}
 function load(){
   try{
     const raw = localStorage.getItem(LS_KEY);
     if(raw){
       const s = JSON.parse(raw);
-      return {...structuredClone(defaultState), ...s, settings:{...defaultState.settings, ...(s.settings||{})}};
+      const merged = {...structuredClone(defaultState), ...s, settings:{...defaultState.settings, ...(s.settings||{})}};
+      merged.tierGroups = migrateTierGroups(s);
+      delete merged.tiers;
+      return merged;
     }
   }catch(e){}
   return structuredClone(defaultState);
@@ -355,14 +378,14 @@ function save(){
 /* ---------- helpers ---------- */
 const totalOf = s => s.entries.reduce((a,e)=>a+e.points, 0);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
-function sortedTiers(){ return [...state.tiers].sort((a,b)=>a.min-b.min); }
-function rankInfoOf(total){
-  const ts = sortedTiers();
+function sortedTiers(band){ return [...(state.tierGroups[band] || state.tierGroups['อื่นๆ'])].sort((a,b)=>a.min-b.min); }
+function rankInfoOf(total, band){
+  const ts = sortedTiers(band);
   let idx = 0;
   ts.forEach((t,i)=>{ if(total >= t.min) idx = i; });
   return {tier: ts[idx], idx, count: ts.length};
 }
-function rankOf(total){ return rankInfoOf(total).tier; }
+function rankOf(total, band){ return rankInfoOf(total, band).tier; }
 
 /* ---------- ตราสัญลักษณ์แรงค์ (SVG) ---------- */
 function shade(hex, pct){
@@ -502,8 +525,8 @@ function emblemSVG(tier, idx, count, size, banner){
     ${banner ? bannerPart : pips}
   </svg>`;
 }
-function nextTierOf(total){
-  return sortedTiers().find(t => t.min > total) || null;
+function nextTierOf(total, band){
+  return sortedTiers(band).find(t => t.min > total) || null;
 }
 function thDate(iso){
   const d = iso ? new Date(iso) : new Date();
@@ -598,7 +621,8 @@ function renderStudents(){
     .map(s => ({...s, total: totalOf(s)}))
     .sort((a,b)=>b.total-a.total);
   tbody.innerHTML = list.map((s,i)=>{
-    const ri = rankInfoOf(s.total), r = ri.tier, nx = nextTierOf(s.total);
+    const band = gradeBandOf(s.room);
+    const ri = rankInfoOf(s.total, band), r = ri.tier, nx = nextTierOf(s.total, band);
     const nxTxt = nx ? `อีก <b>${nx.min - s.total}</b> คะแนน → ${esc(nx.name)}` : '🎉 แรงค์สูงสุดแล้ว';
     return `<tr>
       <td class="num">${i+1}</td>
@@ -663,8 +687,18 @@ function renderHistory(){
 }
 
 /* ---------- tiers ---------- */
+function switchTierBand(band){
+  if(band === currentTierBand) return;
+  // เก็บค่าที่แก้ไขอยู่ของช่วงชั้นปัจจุบันไว้ในหน่วยความจำก่อนสลับแท็บ (ยังไม่บันทึกลงเครื่องจนกว่าจะกด "บันทึกเกณฑ์")
+  state.tierGroups[currentTierBand] = readTierRows();
+  currentTierBand = band;
+  renderTiers();
+}
 function renderTiers(){
-  const ts = sortedTiers();
+  document.getElementById('tierBandTabs').innerHTML = GRADE_BANDS.map(g =>
+    `<button class="${g===currentTierBand?'active':''}" onclick="switchTierBand('${g}')">${esc(GRADE_BAND_LABELS[g])}</button>`
+  ).join('');
+  const ts = sortedTiers(currentTierBand);
   renderTiers.imgs = ts.map(t=>t.img||null);
   document.getElementById('tierRows').innerHTML = ts.map((t,i)=>{
     const cur = (ANIMALS.some(a=>a.id===t.animal) && t.animal) || DEFAULT_ANIMALS[Math.min(i, DEFAULT_ANIMALS.length-1)];
@@ -723,7 +757,7 @@ function tierImgChosen(ev){
     cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
     renderTiers.imgs[tierImgTarget] = cv.toDataURL('image/png');
     URL.revokeObjectURL(img.src);
-    state.tiers = readTierRows();
+    state.tierGroups[currentTierBand] = readTierRows();
     renderTiers();
   };
   img.onerror = () => alert('เปิดรูปไม่สำเร็จ');
@@ -731,26 +765,26 @@ function tierImgChosen(ev){
 }
 function clearTierImg(i){
   renderTiers.imgs[i] = null;
-  state.tiers = readTierRows();
+  state.tierGroups[currentTierBand] = readTierRows();
   renderTiers();
 }
 function addTier(){
-  state.tiers = readTierRows();
-  const maxMin = Math.max(0, ...state.tiers.map(t=>t.min));
-  state.tiers.push({name:'แรงค์ใหม่', min:maxMin+50, color:'#e11d48', animal:'shark'});
+  state.tierGroups[currentTierBand] = readTierRows();
+  const maxMin = Math.max(0, ...state.tierGroups[currentTierBand].map(t=>t.min));
+  state.tierGroups[currentTierBand].push({name:'แรงค์ใหม่', min:maxMin+50, color:'#e11d48', animal:'shark'});
   renderTiers();
 }
 function removeTier(i){
   const ts = readTierRows();
   if(ts.length<=1){ alert('ต้องมีอย่างน้อย 1 แรงค์'); return; }
   ts.splice(i,1);
-  state.tiers = ts;
+  state.tierGroups[currentTierBand] = ts;
   renderTiers();
 }
 function saveTiers(){
-  state.tiers = readTierRows().sort((a,b)=>a.min-b.min);
+  state.tierGroups[currentTierBand] = readTierRows().sort((a,b)=>a.min-b.min);
   save(); renderTiers(); renderStudents();
-  alert('บันทึกเกณฑ์แรงค์แล้ว ✓');
+  alert('บันทึกเกณฑ์แรงค์แล้ว (ทุกช่วงชั้น) ✓');
 }
 function saveSettings(){
   state.settings.title = document.getElementById('setTitle').value.trim() || defaultState.settings.title;
@@ -782,7 +816,7 @@ function renderPrintTab(){
   const list = printFilteredStudents();
   for(const id of [...printSelected]) if(!state.students.some(s=>s.id===id)) printSelected.delete(id);
   document.getElementById('printRows').innerHTML = list.map(s=>{
-    const ri = rankInfoOf(s.total), r = ri.tier;
+    const ri = rankInfoOf(s.total, gradeBandOf(s.room)), r = ri.tier;
     return `<tr>
       <td class="checkbox-cell"><input type="checkbox" ${printSelected.has(s.id)?'checked':''} onchange="togglePrint('${s.id}', this.checked)"></td>
       <td class="name-cell">${esc(s.name)}</td><td>${esc(s.room||'-')}</td>
@@ -817,7 +851,7 @@ function historyLine(s){
   return steps.join(' → ');
 }
 function certHTML(s){
-  const total = totalOf(s), ri = rankInfoOf(total), r = ri.tier;
+  const total = totalOf(s), ri = rankInfoOf(total, gradeBandOf(s.room)), r = ri.tier;
   const sm = Number(state.settings.perPage) === 16;
   const hist = historyLine(s);
   return `<div class="cert${sm?' sm':''}" style="--cert-color:${r.color}">
@@ -1023,9 +1057,12 @@ function importData(ev){
   reader.onload = () => {
     try{
       const s = JSON.parse(reader.result);
-      if(!Array.isArray(s.students) || !Array.isArray(s.tiers)) throw new Error('bad');
+      if(!Array.isArray(s.students) || !(s.tierGroups || Array.isArray(s.tiers))) throw new Error('bad');
       if(!confirm(`นำเข้าข้อมูล: นักเรียน ${s.students.length} คน — ข้อมูลปัจจุบันจะถูกแทนที่ ยืนยัน?`)) return;
       state = {...structuredClone(defaultState), ...s, settings:{...defaultState.settings, ...(s.settings||{})}};
+      state.tierGroups = migrateTierGroups(s);
+      delete state.tiers;
+      currentTierBand = GRADE_BANDS[0];
       save(); renderStudents(); renderTiers(); renderPrintTab();
       alert('นำเข้าข้อมูลสำเร็จ ✓');
     }catch(e){ alert('ไฟล์ไม่ถูกต้อง'); }
