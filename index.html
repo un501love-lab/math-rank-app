@@ -245,6 +245,10 @@
         <h2 style="margin-bottom:0;">📋 รายชื่อนักเรียน</h2>
         <div class="toolbar-right">
           <select id="studentRoomFilter" onchange="stuRoomFilter=this.value; renderStudents();" style="min-width:110px;"></select>
+          <select id="sortModeSelect" onchange="studentSortMode=this.value; renderStudents();" style="min-width:130px;">
+            <option value="list">เรียงตามเลขที่</option>
+            <option value="rank">เรียงตามอันดับ</option>
+          </select>
           <button class="danger small" onclick="deleteAllInRoom()">🗑 ลบทั้งห้อง</button>
           <input type="text" id="searchBox" placeholder="🔍 ค้นหาชื่อ..." oninput="renderStudents()" style="width:180px;">
         </div>
@@ -830,6 +834,7 @@ function editStudent(id){
   save(); renderStudents();
 }
 let stuRoomFilter = '';
+let studentSortMode = 'list';   // 'list' = ตามลำดับที่เพิ่ม/นำเข้า (เลขที่), 'rank' = เรียงตามคะแนนสะสม
 function addStudent(){
   const name = document.getElementById('newName').value.trim();
   const room = document.getElementById('newRoom').value.trim();
@@ -873,8 +878,10 @@ function renderStudents(){
   const list = state.students
     .filter(s => !stuRoomFilter || (stuRoomFilter==='__none' ? !(s.room||'').trim() : (s.room||'').trim()===stuRoomFilter))
     .filter(s => !q || s.name.toLowerCase().includes(q) || (s.room||'').toLowerCase().includes(q))
-    .map(s => ({...s, total: totalOf(s)}))
-    .sort((a,b)=>b.total-a.total);
+    .map(s => ({...s, total: totalOf(s)}));
+  if(studentSortMode === 'rank') list.sort((a,b)=>b.total-a.total);
+  // โหมด 'list' ไม่ต้อง sort — คงลำดับเดิมตามที่อยู่ใน state.students (ลำดับที่เพิ่ม/นำเข้ามา = เลขที่)
+  document.getElementById('sortModeSelect').value = studentSortMode;
   tbody.innerHTML = list.map((s,i)=>{
     const band = gradeBandOf(s.room);
     const ri = rankInfoOf(s.total, band), r = ri.tier, nx = nextTierOf(s.total, band);
