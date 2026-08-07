@@ -120,8 +120,7 @@
   .cert .c-room{font-size:7.5pt; color:#64748b;}
   .cert .c-history{font-size:6pt; color:#475569; margin-top:.8mm; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center;}
   .cert .c-rankline{display:flex; align-items:center; gap:3mm; margin-top:0;}
-  .cert .c-imgstack{display:flex; flex-direction:column; align-items:center; gap:1mm;}
-  .cert .c-imgstack img{max-height:21mm; width:auto !important; filter:drop-shadow(0 .4mm .6mm rgba(0,0,0,.25));}
+  .cert .c-rankline img{max-height:23mm; width:auto !important; filter:drop-shadow(0 .4mm .6mm rgba(0,0,0,.25)); border-radius:3mm;}
   .cert .c-rankline svg{display:block; filter:drop-shadow(0 .4mm .6mm rgba(0,0,0,.25));}
   .cert .c-rank{
     padding:1mm 5mm; border-radius:99px; color:#fff; font-weight:800; font-size:10.5pt;
@@ -139,7 +138,7 @@
   .cert.sm .c-room{font-size:6pt;}
   .cert.sm .c-rankline{gap:1.5mm;}
   .cert.sm .c-rank{font-size:7.5pt; padding:.7mm 3.5mm;}
-  .cert.sm .c-imgstack img{max-height:15mm;}
+  .cert.sm .c-rankline img{max-height:16mm;}
   .cert.sm .c-history{font-size:4.3pt; margin-top:.4mm;}
   .cert.sm .c-foot{font-size:4.6pt;}
   .cert.sm .c-star{font-size:15pt; right:1mm; bottom:4mm;}
@@ -1039,7 +1038,7 @@ function certHTML(s){
       ${hist ? `<div class="c-history">คะแนนสะสมแต่ละรอบ: ${esc(hist)}</div>` : ''}
       <div class="c-rankline">
         ${r.img
-          ? `<span class="c-imgstack">${emblemSVG(r, ri.idx, ri.count, sm?54:74)}<span class="c-rank">${esc(r.name)}</span></span>`
+          ? emblemSVG(r, ri.idx, ri.count, sm?60:82)
           : emblemSVG(r, ri.idx, ri.count, sm?62:84, true)}
       </div>
     </div>
