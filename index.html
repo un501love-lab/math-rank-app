@@ -440,11 +440,45 @@ function hashPin(pin){
   for(let i=0;i<s.length;i++){ h = ((h*33) ^ s.charCodeAt(i)) >>> 0; }
   return 'room_' + h.toString(36);
 }
-function save(){
-  if(!currentRoomId) return;
-  window.__fbSave(currentRoomId, state).catch(err=>{
-    alert('บันทึกไม่สำเร็จ: ' + (err && err.message ? err.message : 'เชื่อมต่อห้องไม่ได้ ลองใหม่อีกครั้ง'));
+/* บีบอัดรูปตราแบบ base64 ที่ใหญ่เกินไปให้เล็กลง (ย่อขนาด+แปลงเป็น JPEG คุณภาพปานกลาง)
+   ก่อนบันทึกทุกครั้ง กัน Firestore ปฏิเสธเพราะเอกสารเกิน 1MB — และรูปเดียวกันที่ซ้ำกันหลายช่วงชั้น
+   จะถูกบีบอัดแค่ครั้งเดียวแล้วใช้ผลลัพธ์ร่วมกัน (ไม่ต้องบีบซ้ำ) */
+function shrinkDataUrl(dataUrl, maxDim=160, quality=0.75){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = () => {
+      const sc = Math.min(1, maxDim/Math.max(img.width, img.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(img.width*sc));
+      cv.height = Math.max(1, Math.round(img.height*sc));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      resolve(cv.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
   });
+}
+async function compactTierImages(){
+  const seen = new Map();
+  for(const band of GRADE_BANDS){
+    const tiers = state.tierGroups[band];
+    if(!tiers) continue;
+    for(const t of tiers){
+      if(t.img && typeof t.img === 'string' && t.img.startsWith('data:image') && t.img.length > 20000){
+        if(!seen.has(t.img)) seen.set(t.img, await shrinkDataUrl(t.img));
+        t.img = seen.get(t.img);
+      }
+    }
+  }
+}
+async function save(){
+  if(!currentRoomId) return;
+  try{
+    await compactTierImages();
+    await window.__fbSave(currentRoomId, state);
+  }catch(err){
+    alert('บันทึกไม่สำเร็จ: ' + (err && err.message ? err.message : 'เชื่อมต่อห้องไม่ได้ ลองใหม่อีกครั้ง'));
+  }
 }
 function onRoomData(data, err){
   if(err){
@@ -881,11 +915,12 @@ function tierImgChosen(ev){
   if(!f || tierImgTarget===null) return;
   const img = new Image();
   img.onload = () => {
-    const sc = Math.min(1, 384/Math.max(img.width, img.height));
+    // ย่อเหลือ 160px + แปลงเป็น JPEG คุณภาพปานกลาง (แทน PNG 384px เดิม) ให้ไฟล์เล็กพอบันทึกขึ้นห้องกลางได้เสมอ
+    const sc = Math.min(1, 160/Math.max(img.width, img.height));
     const cv = document.createElement('canvas');
     cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc);
     cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-    renderTiers.imgs[tierImgTarget] = cv.toDataURL('image/png');
+    renderTiers.imgs[tierImgTarget] = cv.toDataURL('image/jpeg', 0.75);
     URL.revokeObjectURL(img.src);
     state.tierGroups[currentTierBand] = readTierRows();
     renderTiers();
