@@ -1132,15 +1132,17 @@ function historyLine(s){
 /* ขนาดใบประกาศปรับอัตโนมัติตามจำนวนที่เลือกพิมพ์ — ยิ่งเลือกน้อย ใบยิ่งใหญ่ (เลือก 1 คน ได้เต็มแผ่น A4)
    ยิ่งเลือกเยอะ ใบยิ่งเล็กลง สูงสุด 16 ใบ/แผ่น แล้วขึ้นแผ่นใหม่ต่อเมื่อเกิน 16 */
 function tierForCount(n){
-  if(n <= 2) return {cls:'xl',    imgCustom:176, imgSvg:181, perPage:n};
-  if(n <= 8) return {cls:'',      imgCustom:82,  imgSvg:84,  perPage:8};
-  return         {cls:'small', imgCustom:60,  imgSvg:62,  perPage:16};
+  // gridCls ใช้กับ .cards-grid (คุมจำนวนคอลัมน์), certCls ใช้กับ .cert (คุมขนาดตัวอักษร/ระยะห่างภายในใบ)
+  // ชื่อคลาสของทั้งสองส่วนตั้งไว้คนละชื่อ (small / sm) มาตั้งแต่แรก จึงต้องแยกเก็บ
+  if(n <= 2) return {gridCls:'xl',    certCls:'xl', imgCustom:176, imgSvg:181, perPage:n};
+  if(n <= 8) return {gridCls:'',      certCls:'',   imgCustom:82,  imgSvg:84,  perPage:8};
+  return         {gridCls:'small', certCls:'sm', imgCustom:60,  imgSvg:62,  perPage:16};
 }
 function certHTML(s, tier){
   const t = tier || tierForCount(1);
   const total = totalOf(s), ri = rankInfoOf(total, gradeBandOf(s.room)), r = ri.tier;
   const hist = historyLine(s);
-  return `<div class="cert${t.cls?' '+t.cls:''}" style="--cert-color:${r.color}">
+  return `<div class="cert${t.certCls?' '+t.certCls:''}" style="--cert-color:${r.color}">
     <div class="c-head">
       <div class="c-title">${esc(state.settings.title)}</div>
       <div class="c-org">${esc(state.settings.org)}</div>
@@ -1162,7 +1164,7 @@ function certHTML(s, tier){
     </div>
   </div>`;
 }
-function gridClass(tier){ return 'cards-grid' + (tier.cls ? ' '+tier.cls : ''); }
+function gridClass(tier){ return 'cards-grid' + (tier.gridCls ? ' '+tier.gridCls : ''); }
 function selectedStudents(){
   return state.students.filter(s=>printSelected.has(s.id))
     .map(s=>({...s,total:totalOf(s)})).sort((a,b)=>b.total-a.total);
