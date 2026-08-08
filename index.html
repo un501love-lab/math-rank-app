@@ -916,8 +916,9 @@ function openModal(id){
 }
 function closeModal(){ document.getElementById('modalBg').classList.remove('open'); modalStudentId=null; renderStudents(); }
 function addScore(){
-  const pts = Number(document.getElementById('addPoints').value);
-  if(!pts){ alert('กรุณากรอกคะแนน'); return; }
+  const raw = document.getElementById('addPoints').value.trim();
+  if(raw === '' || isNaN(Number(raw))){ alert('กรุณากรอกคะแนน'); return; }   // อนุญาตให้กรอก 0 ได้ (เช่น เข้าแข่งแต่ได้ 0 คะแนน) ไม่ใช่แค่ค่าว่าง
+  const pts = Number(raw);
   const s = state.students.find(x=>x.id===modalStudentId);
   s.entries.push({points:pts, note:document.getElementById('addNote').value.trim(), date:new Date().toISOString()});
   save();
