@@ -359,6 +359,12 @@
         <button id="dashview-rooms" class="active" onclick="setDashboardView('rooms')">📊 คะแนนเฉลี่ยแต่ละห้อง</button>
         <button id="dashview-students" onclick="setDashboardView('students')">🏆 อันดับนักเรียนรายสายชั้น</button>
       </div>
+      <div class="row" id="levelPickerRow" style="display:none; margin-bottom:12px; align-items:center;">
+        <div>
+          <label>สายชั้น</label>
+          <select id="levelSelect" onchange="rankLevelFilter=this.value; renderStudentRanking();" style="min-width:170px;"></select>
+        </div>
+      </div>
       <div class="hint" id="dashboardHint" style="margin-top:0; margin-bottom:12px;"></div>
       <div id="dashboardContent"></div>
     </div>
@@ -1207,6 +1213,7 @@ function roomStats(){
   return Object.values(byRoom).map(r=>({...r, avg: r.count ? r.sum/r.count : 0}));
 }
 let dashboardView = 'rooms';   // 'rooms' = คะแนนเฉลี่ยรายห้อง, 'students' = อันดับนักเรียนรายสายชั้น
+let rankLevelFilter = '';      // สายชั้นที่เลือกดูอันดับอยู่ ('__all' = แสดงทุกสายชั้น)
 function setDashboardView(view){
   dashboardView = view;
   document.getElementById('dashview-rooms').classList.toggle('active', view==='rooms');
@@ -1221,6 +1228,7 @@ function sortedLevels(levels){
 const dashMedal = i => i===0?' 🥇':i===1?' 🥈':i===2?' 🥉':'';
 function renderDashboard(){
   if(dashboardView === 'students') return renderStudentRanking();
+  document.getElementById('levelPickerRow').style.display = 'none';   // ตัวเลือกสายชั้นใช้เฉพาะมุมมองอันดับนักเรียน
   document.getElementById('dashboardHint').textContent =
     'จัดกลุ่มตามสายชั้น เรียงลำดับห้องจากคะแนนสะสมเฉลี่ยสูงสุดไปต่ำสุด — กด "ดูรายชื่อ" เพื่อดูรายละเอียดนักเรียนในห้องนั้น';
   const stats = roomStats();
@@ -1256,13 +1264,26 @@ function renderStudentRanking(){
   document.getElementById('dashboardHint').textContent =
     'รวมนักเรียนทุกห้องในสายชั้นเดียวกันมาจัดอันดับด้วยกัน (ม.4-6 นับรวมเป็นสายชั้นเดียว) — คะแนนเท่ากันได้อันดับเท่ากัน';
   const el = document.getElementById('dashboardContent');
-  if(!state.students.length){ el.innerHTML = '<div class="empty">ยังไม่มีข้อมูลนักเรียน</div>'; return; }
+  const pickerRow = document.getElementById('levelPickerRow');
+  if(!state.students.length){
+    pickerRow.style.display = 'none';
+    el.innerHTML = '<div class="empty">ยังไม่มีข้อมูลนักเรียน</div>';
+    return;
+  }
   const byLevel = {};
   state.students.forEach(s=>{
     const level = gradeLevelOf(s.room);
     (byLevel[level] = byLevel[level] || []).push({...s, total: totalOf(s)});
   });
-  el.innerHTML = sortedLevels(Object.keys(byLevel)).map(level=>{
+  // ดรอปดาวน์เลือกสายชั้น — ค่าเริ่มต้นแสดงทีละสายชั้น (สายชั้นแรก) ไม่เทออกมาทั้งโรงเรียนพร้อมกัน
+  const allLevels = sortedLevels(Object.keys(byLevel));
+  if(rankLevelFilter !== '__all' && !allLevels.includes(rankLevelFilter)) rankLevelFilter = allLevels[0];
+  pickerRow.style.display = '';
+  document.getElementById('levelSelect').innerHTML =
+    allLevels.map(l=>`<option value="${esc(l)}" ${rankLevelFilter===l?'selected':''}>${esc(l)} (${byLevel[l].length} คน)</option>`).join('') +
+    `<option value="__all" ${rankLevelFilter==='__all'?'selected':''}>— ทุกสายชั้น —</option>`;
+  const shown = rankLevelFilter === '__all' ? allLevels : [rankLevelFilter];
+  el.innerHTML = shown.map(level=>{
     const list = byLevel[level].sort((a,b)=>b.total-a.total);
     let prevTotal = null, prevRank = 0;
     const rows = list.map((s,i)=>{
