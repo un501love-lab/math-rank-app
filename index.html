@@ -355,8 +355,11 @@
   <!-- ===== แท็บ แดชบอร์ด ===== -->
   <div id="page-dashboard" style="display:none;">
     <div class="panel">
-      <h2>📊 คะแนนเฉลี่ยแต่ละห้อง</h2>
-      <div class="hint" style="margin-top:0; margin-bottom:12px;">จัดกลุ่มตามสายชั้น เรียงลำดับห้องจากคะแนนสะสมเฉลี่ยสูงสุดไปต่ำสุด — กด "ดูรายชื่อ" เพื่อดูรายละเอียดนักเรียนในห้องนั้น</div>
+      <div class="tabs" style="margin-bottom:12px;">
+        <button id="dashview-rooms" class="active" onclick="setDashboardView('rooms')">📊 คะแนนเฉลี่ยแต่ละห้อง</button>
+        <button id="dashview-students" onclick="setDashboardView('students')">🏆 อันดับนักเรียนรายสายชั้น</button>
+      </div>
+      <div class="hint" id="dashboardHint" style="margin-top:0; margin-bottom:12px;"></div>
       <div id="dashboardContent"></div>
     </div>
   </div>
@@ -1123,12 +1126,6 @@ function onCertDateChange(){
   state.settings.certDate = document.getElementById('certDate').value;
   save(); updatePreview();
 }
-function historyLine(s){
-  if(!s.entries.length) return '';
-  let sum = 0;
-  const steps = s.entries.map(e => { sum += e.points; return sum; });
-  return steps.join(' → ');
-}
 /* ขนาดใบประกาศปรับอัตโนมัติตามจำนวนที่เลือกพิมพ์ — ยิ่งเลือกน้อย ใบยิ่งใหญ่ (เลือก 1 คน ได้เต็มแผ่น A4)
    ยิ่งเลือกเยอะ ใบยิ่งเล็กลง สูงสุด 16 ใบ/แผ่น แล้วขึ้นแผ่นใหม่ต่อเมื่อเกิน 16 */
 function tierForCount(n){
@@ -1141,7 +1138,6 @@ function tierForCount(n){
 function certHTML(s, tier){
   const t = tier || tierForCount(1);
   const total = totalOf(s), ri = rankInfoOf(total, gradeBandOf(s.room)), r = ri.tier;
-  const hist = historyLine(s);
   return `<div class="cert${t.certCls?' '+t.certCls:''}" style="--cert-color:${r.color}">
     <div class="c-head">
       <div class="c-title">${esc(state.settings.title)}</div>
@@ -1151,7 +1147,7 @@ function certHTML(s, tier){
       <div class="c-star">★</div>
       <div class="c-name">${esc(s.name)}</div>
       <div class="c-room">${s.room?esc(s.room):''}</div>
-      ${hist ? `<div class="c-history">คะแนนสะสมแต่ละรอบ: ${esc(hist)}</div>` : ''}
+      ${s.entries.length ? `<div class="c-history">คะแนนสะสมรวม: ${total}</div>` : ''}
       <div class="c-rankline">
         ${resolveTierImg(r)
           ? emblemSVG(r, ri.idx, ri.count, t.imgCustom)
@@ -1210,13 +1206,28 @@ function roomStats(){
   });
   return Object.values(byRoom).map(r=>({...r, avg: r.count ? r.sum/r.count : 0}));
 }
+let dashboardView = 'rooms';   // 'rooms' = คะแนนเฉลี่ยรายห้อง, 'students' = อันดับนักเรียนรายสายชั้น
+function setDashboardView(view){
+  dashboardView = view;
+  document.getElementById('dashview-rooms').classList.toggle('active', view==='rooms');
+  document.getElementById('dashview-students').classList.toggle('active', view==='students');
+  renderDashboard();
+}
+/* เรียงชื่อสายชั้นให้อ่านง่าย: ป. ก่อน ม. และ "(ไม่ระบุห้อง)" ไปท้ายสุดเสมอ */
+function sortedLevels(levels){
+  return [...levels].sort((a,b)=>
+    a==='(ไม่ระบุห้อง)' ? 1 : b==='(ไม่ระบุห้อง)' ? -1 : a.localeCompare(b,'th',{numeric:true}));
+}
+const dashMedal = i => i===0?' 🥇':i===1?' 🥈':i===2?' 🥉':'';
 function renderDashboard(){
+  if(dashboardView === 'students') return renderStudentRanking();
+  document.getElementById('dashboardHint').textContent =
+    'จัดกลุ่มตามสายชั้น เรียงลำดับห้องจากคะแนนสะสมเฉลี่ยสูงสุดไปต่ำสุด — กด "ดูรายชื่อ" เพื่อดูรายละเอียดนักเรียนในห้องนั้น';
   const stats = roomStats();
   const el = document.getElementById('dashboardContent');
   if(!stats.length){ el.innerHTML = '<div class="empty">ยังไม่มีข้อมูลนักเรียน</div>'; return; }
-  const levels = [...new Set(stats.map(r=>r.level))]
-    .sort((a,b)=>a==='(ไม่ระบุห้อง)' ? 1 : b==='(ไม่ระบุห้อง)' ? -1 : a.localeCompare(b,'th',{numeric:true}));
-  const medal = i => i===0?' 🥇':i===1?' 🥈':i===2?' 🥉':'';
+  const levels = sortedLevels(new Set(stats.map(r=>r.level)));
+  const medal = dashMedal;
   el.innerHTML = levels.map(level=>{
     const rooms = stats.filter(r=>r.level===level).sort((a,b)=>b.avg-a.avg);
     return `<div style="margin-bottom:18px;">
@@ -1233,6 +1244,46 @@ function renderDashboard(){
           <td style="text-align:right;"><button class="small ghost" data-room="${esc(r.room)}" onclick="viewRoomDetail(this.dataset.room)">ดูรายชื่อ</button></td>
         </tr>`).join('')}
         </tbody>
+      </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+/* อันดับนักเรียนรายสายชั้น — รวมนักเรียนทุกห้องในสายชั้นเดียวกันมาจัดอันดับด้วยกัน
+   ม.4-6 รวมเป็นสายชั้นเดียว (ตาม gradeLevelOf) ส่วนสายชั้นอื่นแยกกันตามปกติ
+   คนที่คะแนนเท่ากันให้อันดับเดียวกัน (แบบมาตรฐาน: 1,2,2,4) */
+function renderStudentRanking(){
+  document.getElementById('dashboardHint').textContent =
+    'รวมนักเรียนทุกห้องในสายชั้นเดียวกันมาจัดอันดับด้วยกัน (ม.4-6 นับรวมเป็นสายชั้นเดียว) — คะแนนเท่ากันได้อันดับเท่ากัน';
+  const el = document.getElementById('dashboardContent');
+  if(!state.students.length){ el.innerHTML = '<div class="empty">ยังไม่มีข้อมูลนักเรียน</div>'; return; }
+  const byLevel = {};
+  state.students.forEach(s=>{
+    const level = gradeLevelOf(s.room);
+    (byLevel[level] = byLevel[level] || []).push({...s, total: totalOf(s)});
+  });
+  el.innerHTML = sortedLevels(Object.keys(byLevel)).map(level=>{
+    const list = byLevel[level].sort((a,b)=>b.total-a.total);
+    let prevTotal = null, prevRank = 0;
+    const rows = list.map((s,i)=>{
+      const rank = (s.total === prevTotal) ? prevRank : i+1;   // คะแนนเท่ากัน = อันดับเท่ากัน
+      prevTotal = s.total; prevRank = rank;
+      const band = gradeBandOf(s.room);
+      const ri = rankInfoOf(s.total, band), r = ri.tier;
+      return `<tr>
+        <td class="num">${rank}${dashMedal(rank-1)}</td>
+        <td class="name-cell"><b>${esc(s.name)}</b></td>
+        <td>${esc(s.room||'-')}</td>
+        <td class="num" style="text-align:right;">${s.total}</td>
+        <td><span class="rank-cell">${emblemSVG(r, ri.idx, ri.count, 22)}<span class="badge" style="background:${r.color}">${esc(r.name)}</span></span></td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:18px;">
+      <h2 style="font-size:1rem;">🏆 สายชั้น ${esc(level)} <span class="sub" style="font-weight:400;">(${list.length} คน)</span></h2>
+      <div style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>อันดับ</th><th>ชื่อ-นามสกุล</th><th>ห้อง</th><th style="text-align:right;">คะแนนสะสม</th><th>แรงค์</th></tr></thead>
+        <tbody>${rows}</tbody>
       </table>
       </div>
     </div>`;
