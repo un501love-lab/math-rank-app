@@ -10,7 +10,8 @@
 <script type="module">
   // เชื่อมต่อ Firebase (Firestore) เพื่อให้ครูหลายคนกรอกคะแนนในห้องเดียวกันแบบเรียลไทม์
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot,
+           collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBfrjQqwi3LGT48njbwux7tJYx86_yfiHA",
@@ -46,6 +47,22 @@
   window.__fbLoadImage = async function(roomId, imageId){
     const snap = await getDoc(doc(db, 'rooms', roomId, 'images', imageId));
     return snap.exists() ? snap.data().data : null;
+  };
+  // สำเนาข้อมูลย้อนหลัง เก็บเอกสารละจุดกู้คืนใน subcollection 'backups'
+  window.__fbSaveBackup = function(roomId, backupId, payload){
+    return setDoc(doc(db, 'rooms', roomId, 'backups', backupId), payload);
+  };
+  window.__fbListBackups = async function(roomId){
+    const snap = await getDocs(query(collection(db, 'rooms', roomId, 'backups'), orderBy('createdAt', 'desc')));
+    // ไม่ดึงฟิลด์ data (ตัวข้อมูลเต็ม) มาด้วย เพื่อให้หน้ารายการเบา
+    return snap.docs.map(d => ({ id: d.id, createdAt: d.data().createdAt, label: d.data().label, studentCount: d.data().studentCount }));
+  };
+  window.__fbLoadBackup = async function(roomId, backupId){
+    const snap = await getDoc(doc(db, 'rooms', roomId, 'backups', backupId));
+    return snap.exists() ? snap.data() : null;
+  };
+  window.__fbDeleteBackup = function(roomId, backupId){
+    return deleteDoc(doc(db, 'rooms', roomId, 'backups', backupId));
   };
   window.__fbReady = true;
   window.dispatchEvent(new Event('fbready'));
@@ -219,6 +236,7 @@
     </div>
     <div class="toolbar-right">
       <button class="ghost small" id="roomIndicator" onclick="changeRoom()" title="คลิกเพื่อเปลี่ยนห้อง">🔑 ห้อง</button>
+      <button class="ghost" onclick="openBackups()">🕘 กู้คืนข้อมูล</button>
       <button class="ghost" onclick="exportData()">⬇ สำรองข้อมูล</button>
       <button class="ghost" onclick="document.getElementById('importFile').click()">⬆ นำเข้าข้อมูล</button>
       <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
@@ -410,6 +428,18 @@
   </div>
 </div>
 
+<!-- ===== Modal: กู้คืนข้อมูลย้อนหลัง ===== -->
+<div class="modal-bg" id="backupBg" onclick="if(event.target===this)closeBackups()">
+  <div class="modal">
+    <div class="flex-between">
+      <h3>🕘 กู้คืนข้อมูลย้อนหลัง</h3>
+      <button class="ghost small" onclick="closeBackups()">✕ ปิด</button>
+    </div>
+    <div class="hint" style="margin:8px 0 12px;">ระบบสำรองข้อมูลของห้องนี้ให้อัตโนมัติ (วันละครั้ง และก่อนทุกครั้งที่ลบ/เขียนทับข้อมูล) — เลือกจุดเวลาที่ต้องการย้อนกลับไปได้เลย ข้อมูลปัจจุบันจะถูกสำรองไว้ก่อนกู้คืนเสมอ</div>
+    <div id="backupList"></div>
+  </div>
+</div>
+
 <!-- ===== พื้นที่พิมพ์ ===== -->
 <div id="printArea"><div class="cards-grid" id="printGrid"></div></div>
 
@@ -546,9 +576,44 @@ async function externalizeTierImages(){
   }
   return uploaded.size > 0;
 }
+/* ---------- สำเนาข้อมูลย้อนหลัง (กันข้อมูลหายจากการลบพลาด/แก้ผิด) ----------
+   เก็บเป็นเอกสารแยกใน /rooms/{id}/backups/{backupId} — รูปตราไม่ถูกสำเนาซ้ำ เพราะเก็บแยกอยู่แล้ว
+   และเราไม่เคยลบเอกสารรูปทิ้ง สำเนาเก่าจึงยังอ้างถึงรูปเดิมได้ */
+const MAX_BACKUPS = 12;
+async function writeBackup(label){
+  if(!currentRoomId) return;
+  const payload = {
+    createdAt: new Date().toISOString(),
+    label,
+    studentCount: state.students.length,
+    data: JSON.stringify(state)          // เก็บเป็นข้อความ เพื่อให้กู้คืนกลับมาได้เหมือนเดิมเป๊ะ
+  };
+  await window.__fbSaveBackup(currentRoomId, 'bk_' + Date.now().toString(36), payload);
+  // เก็บเฉพาะจุดกู้คืนล่าสุด ลบของเก่าทิ้งกันพื้นที่บาน
+  try{
+    const all = await window.__fbListBackups(currentRoomId);
+    for(const old of all.slice(MAX_BACKUPS)) await window.__fbDeleteBackup(currentRoomId, old.id);
+  }catch(e){}
+}
+/* จุดกู้คืนก่อนทำสิ่งที่ย้อนกลับไม่ได้ — เรียกก่อนลบ/เขียนทับข้อมูลเสมอ */
+async function backupBefore(label){
+  if(!currentRoomId || !state.students.length) return;
+  try{ await writeBackup(label); }
+  catch(e){ console.warn('backup failed', e); }   // สำรองพลาดต้องไม่บล็อกงานจริงของครู
+}
+/* สำเนาอัตโนมัติวันละครั้ง (ครั้งแรกที่มีการบันทึกของแต่ละวัน) */
+async function autoBackupDaily(){
+  const today = new Date().toISOString().slice(0,10);
+  if(state.settings.lastBackupDate === today) return;
+  state.settings.lastBackupDate = today;         // ตั้งก่อน เพื่อให้ค่านี้ถูกบันทึกไปพร้อมกับ state รอบนี้
+  if(!state.students.length) return;
+  try{ await writeBackup('สำรองอัตโนมัติประจำวัน'); }
+  catch(e){ console.warn('daily backup failed', e); }
+}
 async function save(){
   if(!currentRoomId) return;
   try{
+    await autoBackupDaily();
     const movedImages = await externalizeTierImages();
     await window.__fbSave(currentRoomId, state);
     // ซิงค์แถวในแท็บตั้งค่าแรงค์ให้ถือ imgId ตัวใหม่ ไม่งั้นการบันทึกครั้งถัดไปจะอัพโหลดรูปเดิมซ้ำ
@@ -878,11 +943,13 @@ function deleteAllInRoom(){
     stuRoomFilter==='__none' ? !(s.room||'').trim() : (s.room||'').trim()===stuRoomFilter);
   const label = stuRoomFilter==='__none' ? '(ไม่ระบุห้อง)' : stuRoomFilter;
   if(!targets.length){ alert(`ไม่มีนักเรียนในห้อง "${label}"`); return; }
-  if(!confirm(`ลบนักเรียนทั้งหมด ${targets.length} คน ในห้อง "${label}" พร้อมประวัติคะแนน?\nการลบนี้ไม่สามารถย้อนกลับได้`)) return;
-  const ids = new Set(targets.map(t=>t.id));
-  state.students = state.students.filter(s=>!ids.has(s.id));
-  save(); renderStudents();
-  alert(`ลบนักเรียนห้อง "${label}" แล้ว ${targets.length} คน ✓`);
+  if(!confirm(`ลบนักเรียนทั้งหมด ${targets.length} คน ในห้อง "${label}" พร้อมประวัติคะแนน?\n(ระบบจะสำรองข้อมูลไว้ให้ก่อนลบ กู้คืนได้จากปุ่ม "🕘 กู้คืนข้อมูล")`)) return;
+  backupBefore(`ก่อนลบนักเรียนห้อง ${label}`).then(()=>{
+    const ids = new Set(targets.map(t=>t.id));
+    state.students = state.students.filter(s=>!ids.has(s.id));
+    save(); renderStudents();
+    alert(`ลบนักเรียนห้อง "${label}" แล้ว ${targets.length} คน ✓`);
+  });
 }
 function renderStudents(){
   const q = (document.getElementById('searchBox').value||'').trim().toLowerCase();
@@ -1405,6 +1472,52 @@ function confirmRosterImport(){
 }
 function closeImport(){ document.getElementById('importBg').classList.remove('open'); rosterPreview=null; }
 
+/* ---------- หน้าต่างกู้คืนข้อมูลย้อนหลัง ---------- */
+function thDateTime(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('th-TH', {day:'numeric', month:'short', year:'numeric'}) +
+         ' ' + d.toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'}) + ' น.';
+}
+async function openBackups(){
+  if(!currentRoomId){ alert('ยังไม่ได้เข้าห้อง'); return; }
+  const el = document.getElementById('backupList');
+  el.innerHTML = '<div class="empty">กำลังโหลด...</div>';
+  document.getElementById('backupBg').classList.add('open');
+  try{
+    const list = await window.__fbListBackups(currentRoomId);
+    el.innerHTML = list.length ? list.map(b=>`
+      <div class="history-item">
+        <span>
+          <b>${esc(thDateTime(b.createdAt))}</b><br>
+          <span class="sub">${esc(b.label||'สำรองข้อมูล')} • นักเรียน ${b.studentCount} คน</span>
+        </span>
+        <button class="small" onclick="restoreBackup('${b.id}')">กู้คืน</button>
+      </div>`).join('')
+      : '<div class="empty">ยังไม่มีจุดกู้คืน — ระบบจะเริ่มสำรองอัตโนมัติเมื่อมีการบันทึกข้อมูลครั้งแรกของวัน</div>';
+  }catch(e){
+    el.innerHTML = '<div class="empty">โหลดรายการไม่สำเร็จ: ' + esc(e.message||'') + '</div>';
+  }
+}
+function closeBackups(){ document.getElementById('backupBg').classList.remove('open'); }
+async function restoreBackup(id){
+  try{
+    const bk = await window.__fbLoadBackup(currentRoomId, id);
+    if(!bk){ alert('ไม่พบข้อมูลสำรองนี้แล้ว'); return; }
+    const snapshot = JSON.parse(bk.data);
+    if(!confirm(`กู้คืนข้อมูลกลับไปเป็นของวันที่ ${thDateTime(bk.createdAt)}\n(นักเรียน ${bk.studentCount} คน)\n\nข้อมูลปัจจุบันของครูทุกคนในห้องนี้จะถูกแทนที่ — แต่ระบบจะสำรองข้อมูลปัจจุบันไว้ให้ก่อน ย้อนกลับได้\n\nยืนยัน?`)) return;
+    await backupBefore('ก่อนกู้คืนข้อมูล');
+    const merged = {...structuredClone(defaultState), ...snapshot, settings:{...defaultState.settings, ...(snapshot.settings||{})}};
+    merged.tierGroups = migrateTierGroups(snapshot);
+    delete merged.tiers;
+    state = merged;
+    await window.__fbSave(currentRoomId, state);   // เขียนตรง ไม่ผ่าน save() เพื่อไม่ให้ไปแตะ lastBackupDate ของสำเนา
+    closeBackups();
+    alert('กู้คืนข้อมูลเรียบร้อยแล้ว ✓');
+  }catch(e){
+    alert('กู้คืนไม่สำเร็จ: ' + (e.message||'ลองใหม่อีกครั้ง'));
+  }
+}
+
 /* ---------- backup ---------- */
 function exportData(){
   // ฝังรูปตราลงไปในไฟล์สำรองด้วย เพื่อให้ไฟล์เดียวจบ นำไปกู้คืนในห้องอื่น/เครื่องอื่นได้
@@ -1426,11 +1539,12 @@ function importData(ev){
   const f = ev.target.files[0];
   if(!f) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try{
       const s = JSON.parse(reader.result);
       if(!Array.isArray(s.students) || !(s.tierGroups || Array.isArray(s.tiers))) throw new Error('bad');
-      if(!confirm(`นำเข้าข้อมูล: นักเรียน ${s.students.length} คน — ข้อมูลปัจจุบันของห้อง "${currentPin}" จะถูกแทนที่สำหรับครูทุกคนในห้องนี้ ยืนยัน?`)) return;
+      if(!confirm(`นำเข้าข้อมูล: นักเรียน ${s.students.length} คน — ข้อมูลปัจจุบันของห้อง "${currentPin}" จะถูกแทนที่สำหรับครูทุกคนในห้องนี้\n(ระบบจะสำรองข้อมูลปัจจุบันไว้ให้ก่อน กู้คืนได้)\n\nยืนยัน?`)) return;
+      await backupBefore('ก่อนนำเข้าข้อมูลจากไฟล์');
       state = {...structuredClone(defaultState), ...s, settings:{...defaultState.settings, ...(s.settings||{})}};
       state.tierGroups = migrateTierGroups(s);
       delete state.tiers;
